@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import math
 
 from . import Agent
-from .. import utils
+from USPS.infra import utils
 
 import hydra
 

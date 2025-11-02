@@ -79,7 +79,7 @@ hydra:
     id: ???
     name: train
     num: ???
-    override_dirname: agent.params.robust_coef=5e-4,agent.params.robust_method=l2_adv_param,experiment=adv,overrides=quadruped_walk,seed=45123
+    override_dirname: agent.params.robust_coef=5e-4,agent.params.robust_method=l2_adv_param,device=cpu,experiment=adv,overrides=quadruped_walk,seed=45123
   job_logging:
     disable_existing_loggers: false
     formatters:
@@ -108,6 +108,7 @@ hydra:
     task:
     - overrides=quadruped_walk
     - seed=45123
+    - device=cpu
     - agent.params.robust_method=l2_adv_param
     - agent.params.robust_coef=5e-4
     - experiment=adv

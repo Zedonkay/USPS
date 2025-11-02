@@ -26,15 +26,25 @@ robust_method=l2_adv_param
 robust_coef=5e-4
 exp_name=adv
 
+# Set device based on OS (macOS doesn't have CUDA)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    DEVICE_OVERRIDE="device=cpu"
+else
+    DEVICE_OVERRIDE="device=cuda:0"
+fi
+
 cuda_id=0
 for seed in 12345 23451 34512 45123 51234; do
-    # set up cuda
-    export CUDA_VISIBLE_DEVICES=${cuda_id}
-    cuda_id=$(($cuda_id+1))
+    # set up cuda (only for Linux)
+    if [[ "$OSTYPE" != "darwin"* ]]; then
+        export CUDA_VISIBLE_DEVICES=${cuda_id}
+        cuda_id=$(($cuda_id+1))
+    fi
     # train
     python python_scripts/train.py \
         overrides=${overrides} \
         seed=${seed} \
+        device=${DEVICE_OVERRIDE#device=} \
         agent.params.robust_method=${robust_method} \
         agent.params.robust_coef=${robust_coef} \
         experiment=${exp_name} &
