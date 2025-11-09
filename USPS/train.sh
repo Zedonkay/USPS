@@ -34,7 +34,7 @@ else
 fi
 
 cuda_id=0
-for seed in 12345 23451 34512 45123 51234; do
+for seed in 12345; do
     # set up cuda (only for Linux)
     if [[ "$OSTYPE" != "darwin"* ]]; then
         export CUDA_VISIBLE_DEVICES=${cuda_id}

@@ -39,3 +39,41 @@
 [2025-11-02 16:08:56,059][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
 [2025-11-02 16:08:56,079][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
 [2025-11-02 16:08:56,191][absl][INFO] - MuJoCo library version is: 210
+[2025-11-05 22:49:45,066][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 22:49:45,072][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[2025-11-05 22:49:45,225][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 22:49:45,292][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 22:57:38,002][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 22:57:38,007][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[2025-11-05 22:57:38,166][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 22:57:38,253][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 22:58:25,998][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 22:58:26,004][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[2025-11-05 22:58:26,148][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 22:58:26,223][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 23:01:15,628][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:01:15,634][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[2025-11-05 23:01:15,820][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 23:01:15,898][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 23:01:24,643][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:01:24,650][OpenGL.acceleratesupport][INFO] - No OpenGL_accelerate module loaded: No module named 'OpenGL_accelerate'
+[2025-11-05 23:01:24,832][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 23:01:24,914][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 23:02:09,187][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:02:09,347][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 23:02:09,453][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 23:02:46,616][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:02:46,875][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 23:02:46,978][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 23:04:19,207][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:04:19,366][absl][WARNING] - mjbindings failed to import mjlib and other functions. libmujoco.so may not be accessible.
+[2025-11-05 23:04:19,464][hydra.utils][ERROR] - Error instantiating envs.rwrl_env.RWRLEnv : Cannot find MuJoCo library at /home/ubuntu/.mujoco/mujoco210/bin/libmujoco210.so.
+[2025-11-05 23:05:24,621][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:05:24,936][absl][INFO] - MuJoCo library version is: 210
+[2025-11-05 23:05:27,025][hydra.utils][ERROR] - Error instantiating agent.agent.SACAgent : No CUDA GPUs are available
+[2025-11-05 23:05:48,742][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:05:49,120][absl][INFO] - MuJoCo library version is: 210
+[2025-11-05 23:05:50,948][hydra.utils][ERROR] - Error instantiating agent.agent.SACAgent : No CUDA GPUs are available
+[2025-11-05 23:09:32,494][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-05 23:09:32,667][absl][INFO] - MuJoCo library version is: 210
+[2025-11-05 23:09:33,211][hydra.utils][ERROR] - Error instantiating agent.agent.SACAgent : No CUDA GPUs are available
