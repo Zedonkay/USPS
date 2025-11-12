@@ -23,6 +23,13 @@ agent:
     learnable_temperature: true
     robust_method: "no"
     robust_coef: 0.1
+    posterior_cfg:
+      enabled: false
+      prior_variance: 1.0
+      likelihood_variance: 1.0
+      sample_interval: 1
+      min_precision: 1.0e-6
+      max_variance: 5.0
     
 double_q_critic:
   class: agent.critic.DoubleQCritic

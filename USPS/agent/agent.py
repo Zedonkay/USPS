@@ -1,10 +1,11 @@
 import os
+import copy
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
+import omegaconf
 
 from . import Agent
 from USPS.infra import utils
@@ -18,7 +19,8 @@ class SACAgent(Agent):
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
-                 batch_size, learnable_temperature, robust_method="none", robust_coef=1e-3):
+                 batch_size, learnable_temperature, robust_method="none",
+                 robust_coef=1e-3, posterior_cfg=None):
         super().__init__()
 
         self.action_range = action_range
@@ -60,11 +62,62 @@ class SACAgent(Agent):
 
         self.robust_method = robust_method
         self.robust_coef = robust_coef
+        self.posterior_cfg = self._coerce_posterior_cfg(posterior_cfg)
+        self.posterior_sample_interval = 1
+        self.posterior_last_sample_step = -1
+        self.posterior_sampler = None
+        self.posterior_actor = None
+
+        if self.posterior_cfg.get('enabled', False):
+            self.posterior_sampler = utils.GaussianPolicyPosterior(
+                self.actor,
+                prior_variance=self.posterior_cfg.get('prior_variance', 1.0),
+                likelihood_variance=self.posterior_cfg.get(
+                    'likelihood_variance', 1.0),
+                min_precision=self.posterior_cfg.get('min_precision', 1e-6),
+                max_variance=self.posterior_cfg.get('max_variance', 5.0))
+            self.posterior_actor = copy.deepcopy(self.actor).to(self.device)
+            self.posterior_actor.train(False)
+            self.posterior_sample_interval = max(
+                1, int(self.posterior_cfg.get('sample_interval', 1)))
+            self._maybe_sample_posterior_actor(force=True)
 
     def train(self, training=True):
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
+        if self.posterior_actor is not None:
+            self.posterior_actor.train(False)
+
+    def reset(self):
+        if self._posterior_enabled():
+            self._maybe_sample_posterior_actor(force=True)
+
+    def _coerce_posterior_cfg(self, cfg):
+        if cfg is None:
+            return {}
+        if isinstance(cfg, omegaconf.DictConfig):
+            return omegaconf.OmegaConf.to_container(cfg, resolve=True)
+        return dict(cfg)
+
+    def _posterior_enabled(self):
+        return self.posterior_sampler is not None and self.posterior_actor is not None
+
+    def _maybe_sample_posterior_actor(self, step=None, force=False):
+        if not self._posterior_enabled():
+            return
+        if not force:
+            if step is None:
+                should_sample = True
+            else:
+                should_sample = (
+                    self.posterior_last_sample_step < 0 or
+                    step - self.posterior_last_sample_step >= self.posterior_sample_interval)
+            if not should_sample:
+                return
+        self.posterior_sampler.sample(self.actor, self.posterior_actor)
+        self.posterior_actor.train(False)
+        self.posterior_last_sample_step = 0 if step is None else step
 
     @property
     def alpha(self):
@@ -73,7 +126,8 @@ class SACAgent(Agent):
     def act(self, obs, sample=False):
         obs = torch.FloatTensor(obs).to(self.device)
         obs = obs.unsqueeze(0)
-        dist = self.actor(obs)
+        policy = self.posterior_actor if (sample and self._posterior_enabled()) else self.actor
+        dist = policy(obs)
         action = dist.sample() if sample else dist.mean
         action = action.clamp(*self.action_range)
         assert action.ndim == 2 and action.shape[0] == 1
@@ -137,6 +191,8 @@ class SACAgent(Agent):
         # optimize the actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
+        if self.posterior_sampler is not None:
+            self.posterior_sampler.update(self.actor)
         self.actor_optimizer.step()
 
         self.actor.log(logger, step)
@@ -162,20 +218,33 @@ class SACAgent(Agent):
 
         self.update_critic(obs, action, reward, next_obs, not_done_no_max, logger, step, next_obs_dir)
 
+        updated_actor = False
         if step % self.actor_update_frequency == 0:
             self.update_actor_and_alpha(obs, logger, step)
+            updated_actor = True
 
         if step % self.critic_target_update_frequency == 0:
             utils.soft_update_params(self.critic, self.critic_target,
                                      self.critic_tau)
+        if updated_actor:
+            self._maybe_sample_posterior_actor(step)
 	
     def save(self, agent_dir):
         torch.save(self.actor.state_dict(), os.path.join(agent_dir, "actor.pth"))
         torch.save(self.critic.state_dict(), os.path.join(agent_dir, "critic.pth"))
+        if self._posterior_enabled():
+            torch.save(self.posterior_sampler.state_dict(),
+                       os.path.join(agent_dir, "posterior.pth"))
 
     def load(self, agent_dir):
         self.actor.load_state_dict(torch.load(os.path.join(agent_dir, "actor.pth"), map_location=torch.device('cpu')))
         self.critic.load_state_dict(torch.load(os.path.join(agent_dir, "critic.pth"), map_location=torch.device('cpu')))
+        posterior_path = os.path.join(agent_dir, "posterior.pth")
+        if self._posterior_enabled() and os.path.exists(posterior_path):
+            state_dict = torch.load(posterior_path, map_location=torch.device('cpu'))
+            self.posterior_sampler.load_state_dict(state_dict)
+        if self._posterior_enabled():
+            self._maybe_sample_posterior_actor(force=True)
 
 
     """

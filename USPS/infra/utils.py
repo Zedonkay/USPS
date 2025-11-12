@@ -8,6 +8,7 @@ import os
 from collections import deque
 import random
 import math
+from typing import Dict
 
 import hydra
 
@@ -146,3 +147,71 @@ def load_hydra_cfg(results_dir) -> omegaconf.DictConfig:
     return cfg
 
 
+class GaussianPolicyPosterior:
+    """Diagonal Gaussian posterior over policy parameters.
+
+    This helper tracks a Gaussian prior/posterior over the actor weights as a
+    lightweight approximation of the posterior sampling strategy from
+    "Posterior Sampling for Continuing Environments" (Xu et al., 2025). We use
+    the running squared gradients as a proxy for the Fisher information so that
+    sampling can be performed without storing the full covariance.
+    """
+
+    def __init__(self,
+                 module: nn.Module,
+                 prior_variance: float = 1.0,
+                 likelihood_variance: float = 1.0,
+                 min_precision: float = 1e-6,
+                 max_variance: float = 5.0):
+        if prior_variance <= 0:
+            raise ValueError("prior_variance must be positive")
+        if likelihood_variance <= 0:
+            raise ValueError("likelihood_variance must be positive")
+        self.prior_precision = 1.0 / prior_variance
+        self.likelihood_precision = 1.0 / likelihood_variance
+        self.min_precision = min_precision
+        self.max_variance = max_variance
+        self.precisions: Dict[str, torch.Tensor] = {}
+        self.reset(module)
+
+    def reset(self, module: nn.Module):
+        """Initializes precisions so the posterior equals the prior."""
+        self.precisions = {}
+        for name, param in module.named_parameters():
+            self.precisions[name] = torch.full_like(
+                param.data, self.prior_precision, device=param.device)
+
+    def update(self, module: nn.Module):
+        """Updates posterior precisions using the current parameter gradients."""
+        for name, param in module.named_parameters():
+            if not param.requires_grad or param.grad is None:
+                continue
+            grad_sq = param.grad.detach() ** 2
+            self.precisions[name] = torch.clamp(
+                self.precisions[name] + self.likelihood_precision * grad_sq,
+                min=self.min_precision)
+
+    def sample(self, source_module: nn.Module, target_module: nn.Module):
+        """Samples parameters from the posterior into ``target_module``."""
+        target_params = dict(target_module.named_parameters())
+        for name, src_param in source_module.named_parameters():
+            if name not in self.precisions or name not in target_params:
+                continue
+            precision = torch.clamp(self.precisions[name],
+                                    min=self.min_precision)
+            variance = torch.clamp(precision.reciprocal(),
+                                   max=self.max_variance)
+            std = torch.sqrt(variance)
+            noise = torch.randn_like(src_param) * std
+            sampled_param = src_param.detach() + noise
+            target_params[name].data.copy_(sampled_param)
+
+    def state_dict(self):
+        return {name: tensor.detach().clone()
+                for name, tensor in self.precisions.items()}
+
+    def load_state_dict(self, state_dict):
+        for name, tensor in state_dict.items():
+            if name in self.precisions:
+                self.precisions[name].data.copy_(
+                    tensor.to(self.precisions[name].device))
