@@ -1092,6 +1092,484 @@ for step in range(num_steps):
     #   - Modifies target value to penalize adversarial directions
 ```
 
+### Complete Regularization System Details
+
+This section provides a comprehensive explanation of all regularization methods implemented in the codebase. The regularization system has two main categories: **parameter space regularization** (affects value function) and **weight regularization** (affects network parameters).
+
+#### Regularization Architecture Overview
+
+The regularization system operates at two levels:
+
+1. **Value Function Regularization** (`*_param` methods):
+   - Modifies the target value function `V(s')`
+   - Computed via `_compute_reg(next_obs, next_obs_dir)`
+   - Applied in the critic update: `target_V = (1-λ)V(s') - λR(s')`
+
+2. **Network Weight Regularization** (`*_reg` methods):
+   - Adds penalty to critic loss function
+   - Applied directly to network parameters: `loss += λ * ||θ||_p`
+   - Standard L1/L2 weight decay
+
+#### Category 1: Parameter Space Regularization (`*_param`)
+
+These methods regularize the value function in **observation space** by measuring sensitivity to perturbations.
+
+##### Mathematical Foundation
+
+All `*_param` methods compute a regularizer of the form:
+
+```
+R(s') = E_δ [ || V(s' + δ) · (δ/σ²) · d ||_p ]
+```
+
+Where:
+- `δ ~ N(0, σ²)`: Gaussian perturbation in observation space
+- `V(s' + δ)`: Value function at perturbed state
+- `δ/σ²`: Gradient of perturbation probability (score function)
+- `d`: Direction vector (adversarial or isotropic)
+- `||·||_p`: Norm (L1, L2, or Linf)
+
+##### 1.1 Non-Adversarial Parameter Regularization
+
+**Methods:** `l2_param`, `l1_param`, `linf_param`
+
+**How It Works:**
+- Uses **isotropic** (uniform) directions - no adversarial component
+- Direction vector `d` is implicitly the identity (no directional bias)
+- Measures general sensitivity to perturbations in all directions
+
+**Implementation:**
+```python
+# In _compute_reg() - non-adversarial branch
+if "adv" not in robust_method:
+    # Isotropic regularization
+    target_V_reg = target_V_sample * next_obs_prob_grad  # [bs, obs_dim]
+    # No multiplication by next_obs_dir (uses identity direction)
+    
+    # Apply norm
+    if robust_method.startswith("l2"):
+        reg = ||target_V_reg||_2  # L2 norm
+    elif robust_method.startswith("l1"):
+        reg = max(target_V_reg)   # L1 norm (max component)
+    elif robust_method.startswith("linf"):
+        reg = ||target_V_reg||_1  # Linf norm (sum of absolute values)
+```
+
+**Mathematical Formulation:**
+- `R(s') = E_δ[ || V(s' + δ) · (δ/σ²) ||_p ]`
+- This measures the **magnitude** of value function sensitivity
+- No directional preference - treats all observation dimensions equally
+
+**When to Use:**
+- General robustness without adversarial component
+- Simpler and faster than adversarial methods
+- Good baseline for comparison
+
+##### 1.2 Adversarial Parameter Regularization
+
+**Methods:** `l2_adv_param`, `l1_adv_param`, `linf_adv_param`
+
+**How It Works:**
+- Uses **adversarial directions** computed from value function gradient
+- Direction vector `d = -∇V(s') / ||∇V(s')||` points toward worst-case perturbations
+- Measures sensitivity specifically in the direction that decreases value the most
+
+**Implementation:**
+```python
+# Step 1: Compute adversarial direction (in replay_buffer.py)
+x = next_obses.clone()
+x.requires_grad = True
+value = model._compute_target_value(x)  # V(s')
+value.backward()
+neg_grad = -x.grad.data  # -∇V(s')
+next_obs_dir = neg_grad / ||neg_grad||_2 * sqrt(obs_dim)  # Normalized direction
+
+# Step 2: Use in regularization (in _compute_reg())
+if "adv" in robust_method:
+    # Adversarial regularization
+    target_V_reg = target_V_sample * next_obs_prob_grad * next_obs_dir  # [bs, obs_dim]
+    # Multiplies by adversarial direction to focus on worst-case
+    
+    # Apply norm
+    if robust_method.startswith("l2"):
+        reg = ||target_V_reg||_2
+    elif robust_method.startswith("l1"):
+        reg = max(target_V_reg)
+    elif robust_method.startswith("linf"):
+        reg = ||target_V_reg||_1
+```
+
+**Mathematical Formulation:**
+- `R(s') = E_δ[ || V(s' + δ) · (δ/σ²) · d_adv ||_p ]`
+- Where `d_adv = -∇V(s') / ||∇V(s')||` is the adversarial direction
+- This measures sensitivity in the **worst-case direction**
+
+**Key Insight:**
+- The adversarial direction `d_adv` is the direction of steepest **decrease** in value
+- By penalizing sensitivity in this direction, we make the value function more robust to worst-case perturbations
+- This is the core of adversarial training
+
+**When to Use:**
+- Maximum robustness to worst-case perturbations
+- When you want policies that handle adversarial conditions
+- More computationally expensive but stronger guarantees
+
+##### 1.3 Norm Types in Parameter Regularization
+
+**L2 Norm (`l2_*_param`):**
+```python
+reg = ||V(s' + δ) · (δ/σ²) · d||_2
+    = sqrt(Σ_i [V(s' + δ) · (δ_i/σ²) · d_i]²)
+```
+- **Geometric interpretation**: Euclidean distance in observation space
+- **Properties**: Smooth, differentiable, treats all dimensions equally
+- **Use case**: Most common, stable, good default
+
+**L1 Norm (`l1_*_param`):**
+```python
+reg = max_i |V(s' + δ) · (δ_i/σ²) · d_i|
+```
+- **Geometric interpretation**: Maximum component (Chebyshev distance)
+- **Properties**: Focuses on worst single dimension
+- **Use case**: When robustness to single-dimension failures is critical
+
+**Linf Norm (`linf_*_param`):**
+```python
+reg = ||V(s' + δ) · (δ/σ²) · d||_1
+    = Σ_i |V(s' + δ) · (δ_i/σ²) · d_i|
+```
+- **Geometric interpretation**: Manhattan distance (sum of absolute values)
+- **Properties**: Sums contributions from all dimensions
+- **Use case**: When cumulative sensitivity across dimensions matters
+
+**Note:** The code uses `torch.norm(..., 1)` for Linf, which is actually L1 norm (sum). True Linf would be `torch.max(abs(...))`.
+
+##### 1.4 Monte Carlo Sampling Details
+
+All parameter regularization methods use Monte Carlo sampling:
+
+```python
+# Sampling parameters
+M = 1              # Number of samples (can be increased for more accuracy)
+sigma = 1.0        # Standard deviation of perturbation
+
+# Sampling process
+delta_obs_sampler = Normal(0, sigma²)
+for m in range(M):
+    delta_obs_sample = sampler.sample()  # δ ~ N(0, σ²)
+    next_obs_sample = next_obs + delta_obs_sample  # s' + δ
+    target_V_sample = V(next_obs_sample)  # V(s' + δ)
+    
+    # Score function gradient
+    prob_grad = delta_obs_sample / sigma²  # ∇_μ log p(δ) = δ/σ²
+    
+    # Regularization term
+    reg_term = V(s' + δ) · prob_grad · d
+    
+    # Apply norm and average
+    reg = mean(||reg_term||_p)
+```
+
+**Why Monte Carlo?**
+- Computes expectation `E_δ[...]` via sampling
+- More samples (`M > 1`) = more accurate but slower
+- Current implementation uses `M=1` for efficiency
+
+**Score Function Trick:**
+- Uses `δ/σ²` which is the gradient of log-probability: `∇_μ log p(δ) = δ/σ²`
+- This allows computing gradients of expectations without backprop through sampling
+
+#### Category 2: Weight Regularization (`*_reg`)
+
+These methods add **weight decay** penalties directly to the critic network parameters.
+
+##### 2.1 L2 Weight Regularization (`l2_reg`)
+
+**Implementation:**
+```python
+# In update_critic()
+if robust_method == "l2_reg":
+    # Compute L2 norm of all critic parameters
+    penalty = sqrt(Σ_θ (θ²))
+         = sqrt(Σ_layers Σ_params (θ_l,i²))
+    
+    # Add to critic loss
+    critic_loss += robust_coef * penalty
+```
+
+**Mathematical Formulation:**
+```
+L_critic = MSE(Q, Q_target) + λ · ||θ||_2²
+```
+
+Where:
+- `θ`: All parameters of critic network
+- `||θ||_2² = Σ_i θ_i²`: Sum of squared parameters
+- `λ = robust_coef`: Regularization strength
+
+**Effect:**
+- Shrinks all parameters toward zero
+- Prevents overfitting
+- Encourages smoother value functions
+
+**When to Use:**
+- Standard weight decay for neural networks
+- Prevents overfitting to training data
+- Can be combined with parameter regularization
+
+##### 2.2 L1 Weight Regularization (`l1_reg`)
+
+**Implementation:**
+```python
+# In update_critic()
+if robust_method == "l1_reg":
+    # Compute L1 norm of all critic parameters
+    penalty = Σ_θ |θ|
+         = Σ_layers Σ_params |θ_l,i|
+    
+    # Add to critic loss
+    critic_loss += robust_coef * penalty
+```
+
+**Mathematical Formulation:**
+```
+L_critic = MSE(Q, Q_target) + λ · ||θ||_1
+```
+
+Where:
+- `||θ||_1 = Σ_i |θ_i|`: Sum of absolute values of parameters
+
+**Effect:**
+- Encourages **sparsity** (many parameters become exactly zero)
+- Feature selection - removes unnecessary parameters
+- More aggressive than L2
+
+**When to Use:**
+- When you want sparse networks
+- Feature selection / pruning
+- More aggressive regularization than L2
+
+#### Complete Regularization Flow
+
+Here's how regularization flows through the training process:
+
+```python
+# 1. Sample batch from replay buffer
+if "adv" in robust_method:
+    obs, action, reward, next_obs, not_done, next_obs_dir = buffer.sample_and_adv(batch_size, agent)
+    # next_obs_dir contains adversarial directions
+else:
+    obs, action, reward, next_obs, not_done, next_obs_dir = buffer.sample(batch_size)
+    # next_obs_dir is all ones (identity)
+
+# 2. Compute standard target value
+target_V = min(Q1_target, Q2_target) - alpha * log_prob
+
+# 3. Compute regularization (if *_param method)
+if robust_method.endswith("param"):
+    reg_V = _compute_reg(next_obs, next_obs_dir)
+    # reg_V shape: [batch_size, 1]
+    
+    # Modify target value
+    target_V = (1 - robust_coef) * target_V - robust_coef * reg_V
+    # Note: subtraction penalizes high regularization values
+
+# 4. Compute target Q
+target_Q = reward + discount * target_V
+
+# 5. Compute critic loss
+critic_loss = MSE(Q1, target_Q) + MSE(Q2, target_Q)
+
+# 6. Add weight regularization (if *_reg method)
+if robust_method.endswith("reg"):
+    if robust_method.startswith("l2"):
+        penalty = sqrt(Σ_θ θ²)
+    elif robust_method.startswith("l1"):
+        penalty = Σ_θ |θ|
+    critic_loss += robust_coef * penalty
+
+# 7. Backpropagate and update
+critic_loss.backward()
+critic_optimizer.step()
+```
+
+#### Regularization Method Comparison Table
+
+| Method | Type | Direction | Norm | Applied To | Effect |
+|--------|------|-----------|------|------------|--------|
+| `"no"` | None | N/A | N/A | N/A | No regularization |
+| `"l2_param"` | Value | Isotropic | L2 | Value function | General robustness |
+| `"l1_param"` | Value | Isotropic | L1 (max) | Value function | Worst-dimension robustness |
+| `"linf_param"` | Value | Isotropic | L1 (sum) | Value function | Cumulative robustness |
+| `"l2_adv_param"` | Value | Adversarial | L2 | Value function | Worst-case robustness |
+| `"l1_adv_param"` | Value | Adversarial | L1 (max) | Value function | Worst-case + worst-dim |
+| `"linf_adv_param"` | Value | Adversarial | L1 (sum) | Value function | Worst-case + cumulative |
+| `"l2_reg"` | Weight | N/A | L2 | Network params | Weight decay |
+| `"l1_reg"` | Weight | N/A | L1 | Network params | Sparsity |
+
+#### Mathematical Details: Why This Works
+
+**Parameter Regularization Intuition:**
+
+The regularizer `R(s') = E_δ[V(s' + δ) · (δ/σ²) · d]` measures:
+1. **Sensitivity**: How much does `V` change when `s'` is perturbed?
+2. **Direction**: In which direction does it change most? (adversarial vs. isotropic)
+3. **Magnitude**: What's the magnitude of this change? (norm type)
+
+By penalizing this in the target value:
+```
+V_target = (1-λ)V(s') - λR(s')
+```
+
+We're saying: "The value should be lower if it's sensitive to perturbations." This encourages:
+- **Smoother value functions**: Less sensitive to small observation changes
+- **Robust policies**: Policies that work even with observation noise
+- **Better generalization**: Works across different conditions
+
+**Adversarial vs. Non-Adversarial:**
+
+- **Non-adversarial** (`l2_param`): Penalizes sensitivity in **all directions equally**
+  - Encourages general smoothness
+  - Treats all observation dimensions the same
+  
+- **Adversarial** (`l2_adv_param`): Penalizes sensitivity in **worst-case direction**
+  - Focuses on directions that decrease value the most
+  - Stronger robustness guarantee
+  - More targeted regularization
+
+#### Implementation Code Walkthrough
+
+**Step-by-step through `_compute_reg()`:**
+
+```python
+def _compute_reg(self, next_obs, next_obs_dir):
+    """
+    next_obs: [batch_size, obs_dim] - next observations
+    next_obs_dir: [batch_size, obs_dim] - adversarial directions (or ones)
+    Returns: [batch_size, 1] - regularization values
+    """
+    
+    # Case 1: No regularization
+    if robust_method == "no":
+        return zeros([batch_size, 1])
+    
+    # Case 2: Parameter space regularization
+    elif robust_method.endswith("param"):
+        M = 1  # Number of Monte Carlo samples
+        sigma = 1.0  # Perturbation standard deviation
+        
+        # Create Gaussian sampler centered at zero
+        delta_sampler = Normal(0, sigma²)
+        
+        vs = []
+        for m in range(M):
+            # Sample perturbation
+            delta = delta_sampler.sample()  # [bs, obs_dim]
+            next_obs_perturbed = next_obs + delta  # [bs, obs_dim]
+            
+            # Compute value at perturbed state
+            V_perturbed = _compute_target_value(next_obs_perturbed)  # [bs, 1]
+            
+            # Score function gradient: ∇_μ log p(δ) = δ/σ²
+            prob_grad = delta / (sigma * sigma)  # [bs, obs_dim]
+            
+            # Compute regularization term
+            if "adv" in robust_method:
+                # Adversarial: multiply by direction
+                reg_term = V_perturbed * prob_grad * next_obs_dir  # [bs, obs_dim]
+            else:
+                # Non-adversarial: no direction
+                reg_term = V_perturbed * prob_grad  # [bs, obs_dim]
+            
+            # Apply norm
+            if robust_method.startswith("l2"):
+                reg_value = ||reg_term||_2  # [bs, 1]
+            elif robust_method.startswith("l1"):
+                reg_value = max(reg_term)   # [bs, 1]
+            elif robust_method.startswith("linf"):
+                reg_value = ||reg_term||_1  # [bs, 1]
+            
+            vs.append(reg_value)
+        
+        # Average over samples
+        return mean(vs, dim=1)  # [bs, 1]
+```
+
+**Step-by-step through `update_critic()`:**
+
+```python
+def update_critic(self, obs, action, reward, next_obs, not_done, next_obs_dir):
+    # 1. Compute standard target value
+    target_V = min(Q1_target, Q2_target) - alpha * log_prob  # [bs, 1]
+    
+    # 2. Compute value regularization (if *_param)
+    reg_V = _compute_reg(next_obs, next_obs_dir)  # [bs, 1]
+    
+    # 3. Modify target value
+    target_V = (1 - robust_coef) * target_V - robust_coef * reg_V  # [bs, 1]
+    # Note: Subtraction means high reg_V → lower target_V
+    
+    # 4. Compute target Q
+    target_Q = reward + discount * target_V  # [bs, 1]
+    
+    # 5. Compute base critic loss
+    critic_loss = MSE(Q1, target_Q) + MSE(Q2, target_Q)
+    
+    # 6. Add weight regularization (if *_reg)
+    if robust_method.endswith("reg"):
+        if robust_method.startswith("l2"):
+            # L2: sqrt of sum of squares
+            penalty = sqrt(sum([(p**2).sum() for p in critic.parameters()]))
+        elif robust_method.startswith("l1"):
+            # L1: sum of absolute values
+            penalty = sum([p.abs().sum() for p in critic.parameters()])
+        
+        critic_loss += robust_coef * penalty
+    
+    # 7. Optimize
+    critic_loss.backward()
+    critic_optimizer.step()
+```
+
+#### Choosing the Right Regularization
+
+**For General Robustness:**
+- Start with `l2_param` (simple, effective)
+- If you need stronger guarantees, use `l2_adv_param`
+
+**For Worst-Case Robustness:**
+- Use `l2_adv_param` (most common adversarial method)
+- Consider `l1_adv_param` if single-dimension failures are critical
+
+**For Overfitting Prevention:**
+- Use `l2_reg` (standard weight decay)
+- Can combine with parameter regularization: use both
+
+**For Sparse Networks:**
+- Use `l1_reg` to encourage sparsity
+- Useful for model compression
+
+**Typical Settings:**
+- `robust_coef = 1e-4` to `5e-4` for parameter regularization
+- `robust_coef = 1e-4` to `1e-3` for weight regularization
+- Start small and increase if needed
+
+#### Combining Regularization Methods
+
+You can combine weight regularization with parameter regularization by modifying the code, but the current implementation only supports one method at a time. To combine:
+
+```python
+# Hypothetical combined method
+if robust_method == "l2_adv_param_reg":
+    # Parameter regularization
+    reg_V = _compute_reg(next_obs, next_obs_dir)
+    target_V = (1 - robust_coef) * target_V - robust_coef * reg_V
+    
+    # Weight regularization
+    penalty = sqrt(sum([(p**2).sum() for p in critic.parameters()]))
+    critic_loss += robust_coef * penalty
+```
+
 ### Best Practices for Adding Perturbations
 
 1. **Use `task_kwargs` for Configuration:**
