@@ -373,7 +373,7 @@ See `envs/walk_in_the_park/env_utils.py` for examples of dm_control integration.
 The CubeInHand environment is a faithful port of the `torobo_mujoco` cube reorientation task.
 
 **Setup:**
-- Assets are located in `envs/torobo_assets/hand_v4/` (automatically copied from torobo_mujoco)
+- Assets are located in `envs/hand_v4/`
 - Requires MuJoCo Python bindings (`pip install mujoco`)
 - Requires `scipy` for quaternion math
 
@@ -925,7 +925,7 @@ The `robust_method` parameter controls the type of robust training:
 
 **Agent Configuration:**
 ```yaml
-# configs/agent/sac.yaml
+# configs/agent/agent.yaml
 agent:
   params:
     robust_method: "l2_adv_param"  # Adversarial training method
@@ -1605,5 +1605,5 @@ if robust_method == "l2_adv_param_reg":
 1. Create a Gym-compatible environment class in `envs/`
 2. Create a Hydra config file in `configs/overrides/`
 3. Specify `class` as full Python path and `params` as constructor arguments
-4. Run training/testing with the override: `python train.py -cn train.yaml env=my_env`
-5. For environments with perturbations, use `test.py` with `--perturb_param` for robustness evaluation
+4. Run training/testing with the override: `python python_scripts/train.py -cn train.yaml env=my_env`
+5. For environments with perturbations, use `python_scripts/test.py` with `--perturb_param` for robustness evaluation

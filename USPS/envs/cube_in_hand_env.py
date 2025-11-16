@@ -47,7 +47,7 @@ class CubeInHandEnv(gym.Env):
         # Set default model path if not provided
         if model_path is None:
             cur_dir = os.path.dirname(os.path.abspath(__file__))
-            model_path = os.path.join(cur_dir, "torobo_assets/hand_v4/hand_v4_with_cube.xml")
+            model_path = os.path.join(cur_dir, "hand_v4/hand_v4_with_cube.xml")
         
         # Store parameters
         self.control_dt = control_dt

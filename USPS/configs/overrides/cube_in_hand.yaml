@@ -3,7 +3,7 @@ env:
   name: "cube_in_hand"
   class: "envs.cube_in_hand_env.CubeInHandEnv"
   params: 
-    model_path: ${hydra:runtime.cwd}/envs/torobo_assets/hand_v4/hand_v4_with_cube.xml
+    model_path: ${hydra:runtime.cwd}/envs/hand_v4/hand_v4_with_cube.xml
     control_dt: 0.01
     sim_decimation: 4
     action_scale: 0.15
