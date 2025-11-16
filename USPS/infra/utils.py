@@ -186,6 +186,7 @@ class GaussianPolicyPosterior:
         for name, param in module.named_parameters():
             if not param.requires_grad or param.grad is None:
                 continue
+            # Use squared gradients as a Fisher-information proxy
             grad_sq = param.grad.detach() ** 2
             self.precisions[name] = torch.clamp(
                 self.precisions[name] + self.likelihood_precision * grad_sq,
@@ -199,6 +200,7 @@ class GaussianPolicyPosterior:
                 continue
             precision = torch.clamp(self.precisions[name],
                                     min=self.min_precision)
+            # Variance derived from precision, optionally capped to avoid blow-up
             variance = torch.clamp(precision.reciprocal(),
                                    max=self.max_variance)
             std = torch.sqrt(variance)

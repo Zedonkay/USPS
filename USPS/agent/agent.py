@@ -69,6 +69,7 @@ class SACAgent(Agent):
         self.posterior_actor = None
 
         if self.posterior_cfg.get('enabled', False):
+            # Maintain a Gaussian belief over actor weights for Thompson sampling
             self.posterior_sampler = utils.GaussianPolicyPosterior(
                 self.actor,
                 prior_variance=self.posterior_cfg.get('prior_variance', 1.0),
@@ -91,6 +92,7 @@ class SACAgent(Agent):
 
     def reset(self):
         if self._posterior_enabled():
+            # Resample a policy at episode boundaries to refresh exploration
             self._maybe_sample_posterior_actor(force=True)
 
     def _coerce_posterior_cfg(self, cfg):
@@ -126,6 +128,7 @@ class SACAgent(Agent):
     def act(self, obs, sample=False):
         obs = torch.FloatTensor(obs).to(self.device)
         obs = obs.unsqueeze(0)
+        # Use sampled actor when exploring with posterior sampling
         policy = self.posterior_actor if (sample and self._posterior_enabled()) else self.actor
         dist = policy(obs)
         action = dist.sample() if sample else dist.mean
