@@ -67,7 +67,7 @@ class Workspace(object):
             episode_reward = 0
             while not done:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=False)
+                    action = self.agent.act(obs, sample=False,explore=False)
                 obs, reward, done, _ = self.env.step(action)
                 episode_reward += reward
 
@@ -105,10 +105,12 @@ class Workspace(object):
 
             # sample action for data collection
             if self.step < self.cfg.num_random_steps:
-                action = self.env.action_space.sample()
+                # Use very small random actions - zero actions might relax hand and drop block
+                # Small random actions help maintain grasp while exploring
+                action = self.env.action_space.sample() * 0.1
             else:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True)
+                    action = self.agent.act(obs, sample=True,explore=True, step=self.step)
 
             # run training update
             if self.step >= self.cfg.num_random_steps:

@@ -76,3 +76,5 @@
 [2025-11-05 23:09:32,660][absl][INFO] - MuJoCo library version is: 210
 [2025-11-05 23:10:42,012][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
 [2025-11-05 23:10:42,186][absl][INFO] - MuJoCo library version is: 210
+[2025-11-13 19:25:46,810][absl][INFO] - MUJOCO_GL=egl, attempting to import specified OpenGL backend.
+[2025-11-13 19:25:47,094][absl][INFO] - MuJoCo library version is: 210

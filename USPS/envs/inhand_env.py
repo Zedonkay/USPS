@@ -9,7 +9,6 @@ import gym
 from gym.spaces import Box, Dict
 from gym.wrappers import TimeLimit, FlattenObservation
 from scipy.spatial.transform import Rotation as R
-import mujoco
 
 
 class RescaleAction(gym.ActionWrapper):
@@ -44,9 +43,17 @@ class ShadowHandPerturbWrapper(gym.Wrapper):
         
         # Check if environment exposes MuJoCo model
         self.has_mujoco_model = False
+        self.original_damping = None
+        self.original_friction = None
+        self.original_gravity = None
+        
         try:
             self.sim_model = env.unwrapped.sim.model
             self.has_mujoco_model = True
+            # Store original values to restore before applying new perturbations
+            self.original_damping = self.sim_model.dof_damping.copy()
+            self.original_friction = self.sim_model.dof_frictionloss.copy()
+            self.original_gravity = self.sim_model.opt.gravity.copy()
         except (AttributeError, NameError):
             # Some environments might not expose MuJoCo directly
             pass
@@ -59,6 +66,15 @@ class ShadowHandPerturbWrapper(gym.Wrapper):
         params = self.perturb_spec.get('params', {})
         mode = self.perturb_spec.get('mode', 'range')
         self.current_perturb = {}
+        
+        # Restore original values before applying new perturbations
+        if self.has_mujoco_model:
+            if self.original_damping is not None:
+                self.sim_model.dof_damping[:] = self.original_damping
+            if self.original_friction is not None:
+                self.sim_model.dof_frictionloss[:] = self.original_friction
+            if self.original_gravity is not None:
+                self.sim_model.opt.gravity[:] = self.original_gravity
         
         # Use environment's RNG if available, otherwise use numpy random
         if hasattr(self.env.unwrapped, 'np_random'):
@@ -84,19 +100,21 @@ class ShadowHandPerturbWrapper(gym.Wrapper):
                 # Torque scaling is applied in step(), store value
                 pass
             elif self.has_mujoco_model and param_name == 'joint_damping':
-                # Scale joint damping
-                self.sim_model.dof_damping[:] *= value
+                # Scale joint damping from original value
+                self.sim_model.dof_damping[:] = self.original_damping * value
             elif self.has_mujoco_model and param_name == 'joint_friction':
-                # Scale joint friction
-                self.sim_model.dof_frictionloss[:] *= value
+                # Scale joint friction from original value
+                self.sim_model.dof_frictionloss[:] = self.original_friction * value
             elif self.has_mujoco_model and param_name == 'gravity_scale':
-                # Scale gravity
-                self.sim_model.opt.gravity[:] *= value
+                # Scale gravity from original value
+                self.sim_model.opt.gravity[:] = self.original_gravity * value
     
     def reset(self, **kwargs):
         """Reset environment and resample perturbations."""
+        # Reset environment first, then apply perturbations
+        obs = self.env.reset(**kwargs)
         self._sample_perturbations()
-        return self.env.reset(**kwargs)
+        return obs
     
     def step(self, action):
         """Apply torque scaling to action if specified."""
@@ -143,7 +161,16 @@ class InHandEnv(gym.Env):
         
         # Create base environment
         gym_kwargs = gym_kwargs or {}
-        self.base_env = gym.make(env_id, **gym_kwargs)
+        try:
+            self.base_env = gym.make(env_id, **gym_kwargs)
+        except gym.error.DependencyNotInstalled as e:
+            # Handle missing mujoco_py dependency for robotics environments
+            raise ImportError(
+                f"Failed to create environment '{env_id}'. "
+                f"This environment requires mujoco_py, but it appears to be missing. "
+                f"The error was: {e}. "
+                f"Please install mujoco_py or use an environment that uses the newer mujoco package."
+            ) from e
         
         # Apply wrappers
         env = self.base_env

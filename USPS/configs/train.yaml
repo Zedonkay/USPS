@@ -19,4 +19,4 @@ experiment: default
 root_dir: "./outputs"
 hydra:
     run:
-        dir: ${root_dir}/${env.name}-${experiment}/${seed}
+        dir: ${root_dir}/${env.name}-${experiment}/${now:%d-%H%M}-${seed}

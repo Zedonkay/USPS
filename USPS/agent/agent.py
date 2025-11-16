@@ -61,6 +61,12 @@ class SACAgent(Agent):
         self.robust_method = robust_method
         self.robust_coef = robust_coef
 
+        # epsilon-greedy schedule
+        self.eps_start = 0.4
+        self.eps_end = 0.05
+
+        self.eps_decay = 500_000
+
     def train(self, training=True):
         self.training = training
         self.actor.train(training)
@@ -70,14 +76,37 @@ class SACAgent(Agent):
     def alpha(self):
         return self.log_alpha.exp()
 
-    def act(self, obs, sample=False):
-        obs = torch.FloatTensor(obs).to(self.device)
-        obs = obs.unsqueeze(0)
+    # def act(self, obs, sample=False):
+    #     obs = torch.FloatTensor(obs).to(self.device)
+    #     obs = obs.unsqueeze(0)
+    #     dist = self.actor(obs)
+    #     action = dist.sample() if sample else dist.mean
+    #     action = action.clamp(*self.action_range)
+    #     assert action.ndim == 2 and action.shape[0] == 1
+    #     return utils.to_np(action[0])
+    def act(self, obs, sample=False, explore=False, step = 0):
+        # 1) normal policy action
+        obs = torch.FloatTensor(obs).to(self.device).unsqueeze(0)
         dist = self.actor(obs)
-        action = dist.sample() if sample else dist.mean
+        action = dist.sample() if sample else dist.mean   # [1, act_dim]
+
+        # 2) epsilon-greedy exploration (continuous actions)
+        if explore:
+            # decaying epsilon
+            eps = self.eps_end + (self.eps_start - self.eps_end) * \
+                math.exp(-1.0 * step / self.eps_decay)
+
+            if np.random.rand() < eps:
+                # override with a random action in the valid range
+                low, high = self.action_range
+                rand_action = torch.empty_like(action).uniform_(low, high)
+                action = rand_action
+
+        # 3) clamp to action range and return numpy
         action = action.clamp(*self.action_range)
         assert action.ndim == 2 and action.shape[0] == 1
         return utils.to_np(action[0])
+
 
     def update_critic(self, obs, action, reward, next_obs, not_done, logger, step, next_obs_dir):
         dist = self.actor(next_obs)

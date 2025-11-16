@@ -12,8 +12,8 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     fi
 else
     export MUJOCO_GL=egl
-    # Set LD_LIBRARY_PATH for Linux if using mujoco210 (needed for mujoco_py)
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
+    # Only set LD_LIBRARY_PATH for Linux if using mujoco210
+    # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
 fi
 # Note: dm_control should use its bundled MuJoCo version (211)
 
@@ -21,7 +21,7 @@ fi
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # select exp setting and regularizer setting
-overrides=quadruped_run
+overrides=cube_in_hand
 robust_method=l2_adv_param
 robust_coef=7e-5
 exp_name=adv
@@ -50,4 +50,5 @@ for seed in 12345; do
         experiment=${exp_name} &
 
 done
+
 
