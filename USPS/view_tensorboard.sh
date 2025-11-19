@@ -1,24 +1,63 @@
 #!/bin/bash
 # TensorBoard viewer script for server usage
 # Usage: ./view_tensorboard.sh [experiment_name] [port]
-# Default values
-DATA_DIR="outputs/quadruped_run-adv"
+
+# Activate conda environment - ensure it's properly sourced
+if [ -z "$CONDA_DEFAULT_ENV" ]; then
+    # Initialize conda if not already initialized
+    if [ -f "$(conda info --base)/etc/profile.d/conda.sh" ]; then
+        source "$(conda info --base)/etc/profile.d/conda.sh"
+    fi
+    conda activate usps
+fi
+
+# Verify conda environment is activated
+if [ "$CONDA_DEFAULT_ENV" != "usps" ]; then
+    echo "Warning: Conda environment 'usps' not activated. Current: $CONDA_DEFAULT_ENV"
+    echo "Attempting to activate usps..."
+    conda activate usps
+fi
+
+# Verify tensorboard is available
+if ! command -v tensorboard &> /dev/null; then
+    echo "Error: tensorboard command not found. Is it installed in the usps conda environment?"
+    exit 1
+fi
+
+# Resolve repo-relative paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="${SCRIPT_DIR}/outputs"
 PORT=${2:-6006}
-# If experiment name is provided, use that directory
+
+# Build list of TensorBoard run directories (directories that contain event files)
 if [ -n "$1" ]; then
-    LOG_DIR="${DATA_DIR}/$1"
-    if [ ! -d "$LOG_DIR" ]; then
-        echo "Error: Directory $LOG_DIR not found"
+    SEARCH_DIR="${DATA_DIR}/$1"
+    if [ ! -d "$SEARCH_DIR" ]; then
+        echo "Error: Directory $SEARCH_DIR not found"
         echo "Available experiments:"
         ls -1 "$DATA_DIR"
         exit 1
     fi
 else
-    # Use parent directory to view all experiments
-    LOG_DIR="$DATA_DIR"
+    SEARCH_DIR="$DATA_DIR"
 fi
+
+mapfile -t TB_DIRS < <(find "$SEARCH_DIR" -type f -name "events.out.tfevents.*" -printf '%h\n' | sort -u)
+
+if [ ${#TB_DIRS[@]} -eq 0 ]; then
+    echo "Error: No TensorBoard event files found under $SEARCH_DIR"
+    exit 1
+fi
+
 echo "Starting TensorBoard on port $PORT..."
-echo "Log directory: $LOG_DIR"
+echo "Conda environment: $CONDA_DEFAULT_ENV"
+echo "TensorBoard version: $(tensorboard --version 2>/dev/null || echo 'unknown')"
+echo "Search base: $SEARCH_DIR"
+echo "TensorBoard runs found:"
+for dir in "${TB_DIRS[@]}"; do
+    relative="${dir#$DATA_DIR/}"
+    echo "  - ${relative%/tb}"
+done
 echo ""
 echo "To access TensorBoard from your local machine:"
 echo "1. Run this command on your LOCAL machine (not on server):"
@@ -29,5 +68,6 @@ echo "   http://localhost:${PORT}"
 echo ""
 echo "Press Ctrl+C to stop TensorBoard"
 echo ""
-# Start TensorBoard
-tensorboard --logdir="$LOG_DIR" --port="$PORT" --host=0.0.0.0
+# Use --logdir pointing to parent directory - TensorBoard will discover all runs
+# This is more reliable than --logdir_spec for multiple runs
+exec tensorboard --logdir="$SEARCH_DIR" --port="$PORT" --host=0.0.0.0

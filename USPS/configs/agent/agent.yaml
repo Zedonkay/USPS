@@ -23,6 +23,12 @@ agent:
     learnable_temperature: true
     robust_method: "no"
     robust_coef: 0.1
+    # Target entropy step function scheduling
+    # Evaluates f(step) at midpoint of each maintenance period and uses that value for the entire period
+    # Available variables in function: step, action_dim, math, np, exp, log, sqrt
+    # Default: starts at -1.5 * action_dim and decays to -action_dim over training
+    target_entropy_schedule_fn: "-action_dim * (1 + 0.5 * exp(-step / 500000))"  # Decays from -1.5*action_dim to -action_dim
+    target_entropy_maintain_steps: 200000  # Maintain each value for 200k steps (5 periods over 1M steps)
     
 double_q_critic:
   class: agent.critic.DoubleQCritic

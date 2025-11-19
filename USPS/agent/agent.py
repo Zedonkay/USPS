@@ -18,7 +18,8 @@ class SACAgent(Agent):
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
-                 batch_size, learnable_temperature, robust_method="none", robust_coef=1e-3):
+                 batch_size, learnable_temperature, robust_method="none", robust_coef=1e-3,
+                 target_entropy_schedule_fn=None, target_entropy_maintain_steps=None):
         super().__init__()
 
         self.action_range = action_range
@@ -39,7 +40,16 @@ class SACAgent(Agent):
 
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
         self.log_alpha.requires_grad = True
-        # set target entropy to -|A|
+        
+        # Target entropy scheduling configuration
+        self.action_dim = action_dim
+        self.target_entropy_schedule_fn = target_entropy_schedule_fn
+        self.target_entropy_maintain_steps = target_entropy_maintain_steps
+        
+        # Cache for period-based target entropy values
+        self._target_entropy_cache = {}
+        
+        # set target entropy to -|A| (default, or will be overridden by schedule)
         self.target_entropy = -action_dim
 
         # optimizers
@@ -75,6 +85,64 @@ class SACAgent(Agent):
     @property
     def alpha(self):
         return self.log_alpha.exp()
+
+    def get_target_entropy(self, step):
+        """
+        Get target entropy for the current step using step function scheduling.
+        
+        If target_entropy_schedule_fn is None, returns the fixed target_entropy.
+        Otherwise, evaluates f(step) at the midpoint of each maintenance period
+        and uses that value for the entire period.
+        
+        Args:
+            step: Current training step
+            
+        Returns:
+            Target entropy value (float)
+        """
+        # If scheduling is not enabled, return fixed target entropy
+        if self.target_entropy_schedule_fn is None or self.target_entropy_maintain_steps is None:
+            return self.target_entropy
+        
+        # Calculate which period this step belongs to
+        period = step // self.target_entropy_maintain_steps
+        
+        # Check cache first
+        if period in self._target_entropy_cache:
+            return self._target_entropy_cache[period]
+        
+        # Calculate midpoint of this period
+        midpoint = period * self.target_entropy_maintain_steps + self.target_entropy_maintain_steps // 2
+        
+        # Evaluate the function at the midpoint
+        # Create a safe namespace for eval()
+        namespace = {
+            'step': midpoint,
+            'action_dim': self.action_dim,
+            'math': math,
+            'np': np,
+            'exp': math.exp,
+            'log': math.log,
+            'sqrt': math.sqrt,
+        }
+        
+        try:
+            # Evaluate the function expression
+            target_entropy_value = eval(self.target_entropy_schedule_fn, {"__builtins__": {}}, namespace)
+            # Convert to Python float if needed (handles numpy/torch types)
+            if isinstance(target_entropy_value, np.ndarray):
+                target_entropy_value = float(target_entropy_value.item() if target_entropy_value.size == 1 else target_entropy_value[0])
+            elif isinstance(target_entropy_value, torch.Tensor):
+                target_entropy_value = float(target_entropy_value.item())
+            else:
+                target_entropy_value = float(target_entropy_value)
+            # Cache the result for this period
+            self._target_entropy_cache[period] = target_entropy_value
+            return target_entropy_value
+        except Exception as e:
+            # If evaluation fails, fall back to fixed target entropy
+            print(f"Warning: Failed to evaluate target_entropy_schedule_fn: {e}")
+            return self.target_entropy
 
     # def act(self, obs, sample=False):
     #     obs = torch.FloatTensor(obs).to(self.device)
@@ -159,8 +227,11 @@ class SACAgent(Agent):
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
 
+        # Get scheduled target entropy for current step
+        current_target_entropy = self.get_target_entropy(step)
+
         logger.log('train_actor/loss', actor_loss, step)
-        logger.log('train_actor/target_entropy', self.target_entropy, step)
+        logger.log('train_actor/target_entropy', current_target_entropy, step)
         logger.log('train_actor/entropy', -log_prob.mean(), step)
 
         # optimize the actor
@@ -173,7 +244,7 @@ class SACAgent(Agent):
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha *
-                          (-log_prob - self.target_entropy).detach()).mean()
+                          (-log_prob - current_target_entropy).detach()).mean()
             logger.log('train_alpha/loss', alpha_loss, step)
             logger.log('train_alpha/value', self.alpha, step)
             alpha_loss.backward()
