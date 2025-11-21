@@ -110,7 +110,7 @@ class Workspace(object):
                 action = self.env.action_space.sample() * 0.1
             else:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True,explore=True, step=self.step)
+                    action = self.agent.act(obs, sample=True,explore=False, step=self.step)
 
             # run training update
             if self.step >= self.cfg.num_random_steps:
