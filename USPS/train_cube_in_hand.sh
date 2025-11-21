@@ -34,8 +34,8 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 # select exp setting and regularizer setting
 overrides=cube_in_hand
 robust_method=l2_adv_param
-# Sweep across 5 different robust_coef values
-robust_coefs=(1e-5 3e-5 5e-5 7e-5 1e-4)
+# Sweep across 10 different robust_coef values
+robust_coefs=(1e-5 2e-5 3e-5 4e-5 5e-5 6e-5 7e-5 8e-5 9e-5 1e-4)
 exp_base_name=adv
 
 # Set device based on OS (macOS doesn't have CUDA)
@@ -55,7 +55,7 @@ echo "All output will be logged to: ${LOG_DIR}/"
 echo ""
 
 cuda_id=0
-for seed in 12345; do
+for seed in 42; do
     for robust_coef in "${robust_coefs[@]}"; do
         # set up cuda (only for Linux)
         if [[ "$OSTYPE" != "darwin"* ]]; then

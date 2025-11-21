@@ -1,5 +1,5 @@
 #!/bin/bash
-# TensorBoard viewer script for server usage
+# TensorBoard viewer script for server usage - shows all runs together
 # Usage: ./view_tensorboard.sh [experiment_name] [port]
 
 # Activate conda environment - ensure it's properly sourced
@@ -42,6 +42,7 @@ else
     SEARCH_DIR="$DATA_DIR"
 fi
 
+# Find all directories containing TensorBoard event files
 mapfile -t TB_DIRS < <(find "$SEARCH_DIR" -type f -name "events.out.tfevents.*" -printf '%h\n' | sort -u)
 
 if [ ${#TB_DIRS[@]} -eq 0 ]; then
@@ -49,16 +50,42 @@ if [ ${#TB_DIRS[@]} -eq 0 ]; then
     exit 1
 fi
 
-echo "Starting TensorBoard on port $PORT..."
+echo "=========================================="
+echo "TensorBoard Multi-Run Viewer"
+echo "=========================================="
 echo "Conda environment: $CONDA_DEFAULT_ENV"
 echo "TensorBoard version: $(tensorboard --version 2>/dev/null || echo 'unknown')"
 echo "Search base: $SEARCH_DIR"
-echo "TensorBoard runs found:"
-for dir in "${TB_DIRS[@]}"; do
-    relative="${dir#$DATA_DIR/}"
-    echo "  - ${relative%/tb}"
-done
+echo "TensorBoard runs found: ${#TB_DIRS[@]}"
+echo "Port: $PORT"
 echo ""
+
+# Create a temporary symlink tree for better TensorBoard compatibility
+# TensorBoard works best when each run is a top-level directory
+# This approach avoids issues with --logdir_spec and nested directory structures
+TEMP_TB_DIR=$(mktemp -d)
+trap "rm -rf '$TEMP_TB_DIR'" EXIT INT TERM
+
+echo "Creating symlink tree with all runs..."
+for tb_dir in "${TB_DIRS[@]}"; do
+    # Get absolute path to tb directory
+    abs_tb_dir="$(cd "$tb_dir" && pwd)"
+    
+    # Extract relative path to create a unique, readable symlink name
+    relative="${tb_dir#$DATA_DIR/}"
+    run_path="${relative%/tb}"
+    # Create a symlink name by replacing / with _ for readability
+    # Format: experiment_name_run_id (e.g., cube_in_hand-adv-coef1e-4_18-2119-12345)
+    symlink_name="${run_path//\//_}"
+    
+    ln -s "$abs_tb_dir" "$TEMP_TB_DIR/$symlink_name"
+    echo "  - $symlink_name"
+done
+
+echo ""
+echo "Symlink tree created with ${#TB_DIRS[@]} runs"
+echo ""
+
 echo "To access TensorBoard from your local machine:"
 echo "1. Run this command on your LOCAL machine (not on server):"
 echo "   ssh -L ${PORT}:localhost:${PORT} your_username@server_address"
@@ -66,8 +93,11 @@ echo ""
 echo "2. Then open in your browser:"
 echo "   http://localhost:${PORT}"
 echo ""
+echo "All ${#TB_DIRS[@]} runs will be visible together in TensorBoard"
 echo "Press Ctrl+C to stop TensorBoard"
 echo ""
-# Use --logdir pointing to parent directory - TensorBoard will discover all runs
-# This is more reliable than --logdir_spec for multiple runs
-exec tensorboard --logdir="$SEARCH_DIR" --port="$PORT" --host=0.0.0.0
+echo "=========================================="
+echo ""
+
+# Use --logdir pointing to the symlink tree - TensorBoard will see each symlink as a separate run
+exec tensorboard --logdir="$TEMP_TB_DIR" --port="$PORT" --host=0.0.0.0

@@ -79,7 +79,7 @@ class Workspace(object):
 
     def run(self):
         episode, episode_reward, done = 0, 0, True
-        best_eval_reward = 0
+        best_eval_reward = -float('inf')
         start_time = time.time()
         while self.step < self.cfg.num_train_steps:
             if done:
@@ -135,10 +135,17 @@ class Workspace(object):
                 print(f"Evaluating at {self.step}...")
                 self.logger.log('eval/episode', episode, self.step)
                 eval_reward = self.evaluate()
+                print(f"Evaluation reward: {eval_reward:.4f} (best: {best_eval_reward:.4f})")
                 if eval_reward > best_eval_reward:
                     best_eval_reward = eval_reward
+                    print(f"Saving checkpoint (new best eval reward: {best_eval_reward:.4f}) to {self.work_dir}")
                     self.agent.save(self.work_dir)
                 print(f"Ending...")
+        
+        # Save final checkpoint at end of training
+        print(f"\nTraining completed. Saving final checkpoint to {self.work_dir}")
+        self.agent.save(self.work_dir)
+        print(f"Final checkpoint saved. Best eval reward: {best_eval_reward:.4f}")
 
 
 @hydra.main(config_path='../configs/train.yaml', strict=True)

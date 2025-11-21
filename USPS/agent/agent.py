@@ -260,6 +260,10 @@ class SACAgent(Agent):
         
         logger.log('train/batch_reward', reward.mean(), step)
 
+        # Log target_entropy to track curriculum schedule
+        current_target_entropy = self.get_target_entropy(step)
+        logger.log('train/target_entropy', current_target_entropy, step)
+
         self.update_critic(obs, action, reward, next_obs, not_done_no_max, logger, step, next_obs_dir)
 
         if step % self.actor_update_frequency == 0:
@@ -270,8 +274,27 @@ class SACAgent(Agent):
                                      self.critic_tau)
 	
     def save(self, agent_dir):
-        torch.save(self.actor.state_dict(), os.path.join(agent_dir, "actor.pth"))
-        torch.save(self.critic.state_dict(), os.path.join(agent_dir, "critic.pth"))
+        """Save actor and critic checkpoints to agent_dir.
+        
+        Args:
+            agent_dir: Directory path where checkpoints will be saved.
+        """
+        try:
+            # Ensure directory exists
+            os.makedirs(agent_dir, exist_ok=True)
+            
+            actor_path = os.path.join(agent_dir, "actor.pth")
+            critic_path = os.path.join(agent_dir, "critic.pth")
+            
+            torch.save(self.actor.state_dict(), actor_path)
+            torch.save(self.critic.state_dict(), critic_path)
+            
+            print(f"Checkpoint saved successfully to {agent_dir}")
+            print(f"  - Actor: {actor_path}")
+            print(f"  - Critic: {critic_path}")
+        except Exception as e:
+            print(f"ERROR: Failed to save checkpoint to {agent_dir}: {e}")
+            raise
 
     def load(self, agent_dir):
         self.actor.load_state_dict(torch.load(os.path.join(agent_dir, "actor.pth"), map_location=torch.device('cpu')))

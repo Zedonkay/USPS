@@ -79,8 +79,40 @@ class MetersGroup(object):
         if self._csv_writer is None:
             self._csv_writer = csv.DictWriter(self._csv_file,
                                               fieldnames=sorted(data.keys()),
-                                              restval=0.0)
+                                              restval=0.0,
+                                              extrasaction='ignore')
             self._csv_writer.writeheader()
+        else:
+            # Check if new fields appeared that aren't in the current fieldnames
+            existing_fields = set(self._csv_writer.fieldnames)
+            new_fields = set(data.keys()) - existing_fields
+            if new_fields:
+                # Update fieldnames to include new fields
+                # Read existing content to preserve it
+                current_pos = self._csv_file.tell()
+                self._csv_file.seek(0)
+                lines = self._csv_file.readlines()
+                self._csv_file.seek(0)
+                self._csv_file.truncate()
+                
+                # Recreate writer with all fields (existing + new)
+                all_fields = sorted(list(existing_fields) + list(new_fields))
+                self._csv_writer = csv.DictWriter(self._csv_file,
+                                                  fieldnames=all_fields,
+                                                  restval=0.0,
+                                                  extrasaction='ignore')
+                # Write header
+                self._csv_writer.writeheader()
+                
+                # Rewrite existing rows with new field structure
+                if len(lines) > 1:  # More than just header
+                    # Parse existing CSV rows
+                    reader = csv.DictReader(lines[1:], fieldnames=existing_fields)
+                    for row in reader:
+                        # Add missing fields with default value
+                        for field in new_fields:
+                            row[field] = 0.0
+                        self._csv_writer.writerow(row)
         self._csv_writer.writerow(data)
         self._csv_file.flush()
 
