@@ -7,12 +7,12 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
 # set up cuda 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
-overrides=cartpole_balance
-# overrides=cartpole_swingup 
+# overrides=cartpole_balance
+overrides=cartpole_swingup 
 
-# # non robust
-# robust_method=none
-# robust_coef=0
+# non robust
+robust_method=none
+robust_coef=0
  
 # # l2 reg 
 # robust_method=l2_reg
@@ -30,12 +30,13 @@ overrides=cartpole_balance
 # robust_method=l1_param
 # robust_coef=1e-4
 
-# l2 adv
-robust_method=l2_adv_param
-robust_coef=1e-4
+# # l2 adv
+# robust_method=l2_adv_param
+# robust_coef=1e-4
 
 cuda_id=0
-for seed in 12345 23451 34512 45123 51234; do
+# for seed in 12345 23451 34512 45123 51234; do
+for seed in 12345 23451 34512; do
     # set up cuda
     export CUDA_VISIBLE_DEVICES=${cuda_id}
     cuda_id=$(($cuda_id+1))

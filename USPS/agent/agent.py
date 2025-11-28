@@ -66,34 +66,36 @@ class SACAgent(Agent):
         self.posterior_sample_interval = 1
         self.posterior_last_sample_step = -1
         self.posterior_sampler = None
-        self.posterior_actor = None
+        self.posterior_critic = None
 
         if self.posterior_cfg.get('enabled', False):
-            # Maintain a Gaussian belief over actor weights for Thompson sampling
+            # Maintain a Gaussian belief over critic final-layer weights
+            allowed_params = self._critic_last_layer_param_names()
             self.posterior_sampler = utils.GaussianPolicyPosterior(
-                self.actor,
+                self.critic,
                 prior_variance=self.posterior_cfg.get('prior_variance', 1.0),
                 likelihood_variance=self.posterior_cfg.get(
                     'likelihood_variance', 1.0),
                 min_precision=self.posterior_cfg.get('min_precision', 1e-6),
-                max_variance=self.posterior_cfg.get('max_variance', 5.0))
-            self.posterior_actor = copy.deepcopy(self.actor).to(self.device)
-            self.posterior_actor.train(False)
+                max_variance=self.posterior_cfg.get('max_variance', 5.0),
+                allowed_param_names=allowed_params)
+            self.posterior_critic = copy.deepcopy(self.critic).to(self.device)
+            self.posterior_critic.train(False)
             self.posterior_sample_interval = max(
                 1, int(self.posterior_cfg.get('sample_interval', 1)))
-            self._maybe_sample_posterior_actor(force=True)
+            self._maybe_sample_posterior_critic(force=True)
 
     def train(self, training=True):
         self.training = training
         self.actor.train(training)
         self.critic.train(training)
-        if self.posterior_actor is not None:
-            self.posterior_actor.train(False)
+        if self.posterior_critic is not None:
+            self.posterior_critic.train(False)
 
     def reset(self):
         if self._posterior_enabled():
-            # Resample a policy at episode boundaries to refresh exploration
-            self._maybe_sample_posterior_actor(force=True)
+            # Resample critic's last layer at episode boundaries
+            self._maybe_sample_posterior_critic(force=True)
 
     def _coerce_posterior_cfg(self, cfg):
         if cfg is None:
@@ -102,10 +104,28 @@ class SACAgent(Agent):
             return omegaconf.OmegaConf.to_container(cfg, resolve=True)
         return dict(cfg)
 
-    def _posterior_enabled(self):
-        return self.posterior_sampler is not None and self.posterior_actor is not None
+    def _critic_last_layer_param_names(self):
+        names = []
+        if hasattr(self.critic, "Q1") and isinstance(self.critic.Q1, nn.Sequential):
+            idx = len(self.critic.Q1) - 1
+            # Only sample the final linear layer of Q1
+            names.append(f"Q1.{idx}.weight")
+            bias_name = f"Q1.{idx}.bias"
+            if bias_name in dict(self.critic.named_parameters()):
+                names.append(bias_name)
+        if hasattr(self.critic, "Q2") and isinstance(self.critic.Q2, nn.Sequential):
+            idx = len(self.critic.Q2) - 1
+            # Only sample the final linear layer of Q2
+            names.append(f"Q2.{idx}.weight")
+            bias_name = f"Q2.{idx}.bias"
+            if bias_name in dict(self.critic.named_parameters()):
+                names.append(bias_name)
+        return names
 
-    def _maybe_sample_posterior_actor(self, step=None, force=False):
+    def _posterior_enabled(self):
+        return self.posterior_sampler is not None and self.posterior_critic is not None
+
+    def _maybe_sample_posterior_critic(self, step=None, force=False):
         if not self._posterior_enabled():
             return
         if not force:
@@ -117,8 +137,9 @@ class SACAgent(Agent):
                     step - self.posterior_last_sample_step >= self.posterior_sample_interval)
             if not should_sample:
                 return
-        self.posterior_sampler.sample(self.actor, self.posterior_actor)
-        self.posterior_actor.train(False)
+        # Draw a new noisy last layer for the critic
+        self.posterior_sampler.sample(self.critic, self.posterior_critic)
+        self.posterior_critic.train(False)
         self.posterior_last_sample_step = 0 if step is None else step
 
     @property
@@ -128,9 +149,7 @@ class SACAgent(Agent):
     def act(self, obs, sample=False):
         obs = torch.FloatTensor(obs).to(self.device)
         obs = obs.unsqueeze(0)
-        # Use sampled actor when exploring with posterior sampling
-        policy = self.posterior_actor if (sample and self._posterior_enabled()) else self.actor
-        dist = policy(obs)
+        dist = self.actor(obs)
         action = dist.sample() if sample else dist.mean
         action = action.clamp(*self.action_range)
         assert action.ndim == 2 and action.shape[0] == 1
@@ -140,7 +159,8 @@ class SACAgent(Agent):
         dist = self.actor(next_obs)
         next_action = dist.rsample()
         log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
-        target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
+        target_net = self.posterior_critic if self._posterior_enabled() else self.critic_target
+        target_Q1, target_Q2 = target_net(next_obs, next_action)
         target_V = torch.min(target_Q1,
                              target_Q2) - self.alpha.detach() * log_prob
         logger.log('train_critic/target_value', torch.mean(target_V), step)
@@ -174,6 +194,9 @@ class SACAgent(Agent):
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        if self.posterior_sampler is not None:
+            # Update posterior over critic's last layer using its gradients
+            self.posterior_sampler.update(self.critic)
         self.critic_optimizer.step()
 
         self.critic.log(logger, step)
@@ -194,8 +217,6 @@ class SACAgent(Agent):
         # optimize the actor
         self.actor_optimizer.zero_grad()
         actor_loss.backward()
-        if self.posterior_sampler is not None:
-            self.posterior_sampler.update(self.actor)
         self.actor_optimizer.step()
 
         self.actor.log(logger, step)
@@ -229,8 +250,7 @@ class SACAgent(Agent):
         if step % self.critic_target_update_frequency == 0:
             utils.soft_update_params(self.critic, self.critic_target,
                                      self.critic_tau)
-        if updated_actor:
-            self._maybe_sample_posterior_actor(step)
+        self._maybe_sample_posterior_critic(step)
 	
     def save(self, agent_dir):
         torch.save(self.actor.state_dict(), os.path.join(agent_dir, "actor.pth"))
@@ -247,7 +267,7 @@ class SACAgent(Agent):
             state_dict = torch.load(posterior_path, map_location=torch.device('cpu'))
             self.posterior_sampler.load_state_dict(state_dict)
         if self._posterior_enabled():
-            self._maybe_sample_posterior_actor(force=True)
+            self._maybe_sample_posterior_critic(force=True)
 
 
     """
@@ -257,7 +277,8 @@ class SACAgent(Agent):
         dist = self.actor(obs)
         action = dist.rsample()
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
-        target_Q1, target_Q2 = self.critic_target(obs, action)
+        target_net = self.posterior_critic if self._posterior_enabled() else self.critic_target
+        target_Q1, target_Q2 = target_net(obs, action)
         target_Q = torch.min(target_Q1, target_Q2) 
         target_V = target_Q - self.alpha.detach() * log_prob
         return target_V

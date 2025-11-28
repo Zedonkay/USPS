@@ -8,7 +8,7 @@ import os
 from collections import deque
 import random
 import math
-from typing import Dict
+from typing import Dict, Set
 
 import hydra
 
@@ -148,10 +148,10 @@ def load_hydra_cfg(results_dir) -> omegaconf.DictConfig:
 
 
 class GaussianPolicyPosterior:
-    """Diagonal Gaussian posterior over policy parameters.
+    """Diagonal Gaussian posterior over module parameters.
 
-    This helper tracks a Gaussian prior/posterior over the actor weights as a
-    lightweight approximation of the posterior sampling strategy from
+    This helper tracks a Gaussian prior/posterior over a subset of parameters as
+    a lightweight approximation of the posterior sampling strategy from
     "Posterior Sampling for Continuing Environments" (Xu et al., 2025). We use
     the running squared gradients as a proxy for the Fisher information so that
     sampling can be performed without storing the full covariance.
@@ -162,7 +162,8 @@ class GaussianPolicyPosterior:
                  prior_variance: float = 1.0,
                  likelihood_variance: float = 1.0,
                  min_precision: float = 1e-6,
-                 max_variance: float = 5.0):
+                 max_variance: float = 5.0,
+                 allowed_param_names: Set[str] = None):
         if prior_variance <= 0:
             raise ValueError("prior_variance must be positive")
         if likelihood_variance <= 0:
@@ -171,6 +172,7 @@ class GaussianPolicyPosterior:
         self.likelihood_precision = 1.0 / likelihood_variance
         self.min_precision = min_precision
         self.max_variance = max_variance
+        self.allowed_param_names = set(allowed_param_names or [])
         self.precisions: Dict[str, torch.Tensor] = {}
         self.reset(module)
 
@@ -178,12 +180,16 @@ class GaussianPolicyPosterior:
         """Initializes precisions so the posterior equals the prior."""
         self.precisions = {}
         for name, param in module.named_parameters():
+            if self.allowed_param_names and name not in self.allowed_param_names:
+                continue
             self.precisions[name] = torch.full_like(
                 param.data, self.prior_precision, device=param.device)
 
     def update(self, module: nn.Module):
         """Updates posterior precisions using the current parameter gradients."""
         for name, param in module.named_parameters():
+            if self.allowed_param_names and name not in self.allowed_param_names:
+                continue
             if not param.requires_grad or param.grad is None:
                 continue
             # Use squared gradients as a Fisher-information proxy
@@ -196,6 +202,8 @@ class GaussianPolicyPosterior:
         """Samples parameters from the posterior into ``target_module``."""
         target_params = dict(target_module.named_parameters())
         for name, src_param in source_module.named_parameters():
+            if self.allowed_param_names and name not in self.allowed_param_names:
+                continue
             if name not in self.precisions or name not in target_params:
                 continue
             precision = torch.clamp(self.precisions[name],
