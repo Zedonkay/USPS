@@ -6,8 +6,8 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
 # set up cuda
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
-# # cartpole_blance/cartpole_swingup
-# base_dir="outputs/cartpole_balance-adv"
+# cartpole_blance/cartpole_swingup
+# base_dir="outputs/cartpole_swingup-adv-default"
 # perturb_param_list="pole_length pole_mass joint_damping slider_damping"
 # perturb_min_list="0.3 0.1 2e-6 5e-4"
 # perturb_max_list="3.0 10.0 2e-1 3.0"
@@ -19,7 +19,7 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 # perturb_max_list="0.7 0.7 10.0 2.0"
 
 # quadruped_walk/quadruped_run
-base_dir="outputs/quadruped_run-adv"
+base_dir="pre_outputs/quadruped_run-adv"
 perturb_param_list="shin_length torso_density joint_damping contact_friction"
 perturb_min_list="0.25 500.0 10.0 0.1"
 perturb_max_list="2.0 10000.0 150.0 4.5"
@@ -32,7 +32,7 @@ length=${#perturb_param_list[@]}
 
 
 cuda_id=0
-for seed in 12345 23451 34512 45123 51234; do
+for seed in 12345; do
     export CUDA_VISIBLE_DEVICES=${cuda_id}
     cuda_id=$(($cuda_id+1))
     exp_dir=$base_dir/$seed 

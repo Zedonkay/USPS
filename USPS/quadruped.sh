@@ -35,7 +35,7 @@ robust_method=l2_adv_param
 robust_coef=5e-4
 
 cuda_id=0
-for seed in 12345 23451 34512 45123 51234; do
+for seed in 12345 23451 34512; do
     # set up cuda
     export CUDA_VISIBLE_DEVICES=${cuda_id}
     cuda_id=$(($cuda_id+1))
