@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from collections import deque
 
 from . import Agent
 from USPS.infra import utils
@@ -19,7 +20,9 @@ class SACAgent(Agent):
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
                  batch_size, learnable_temperature, robust_method="none", robust_coef=1e-3,
-                 target_entropy_schedule_fn=None, target_entropy_maintain_steps=None):
+                 target_entropy_schedule_fn=None, target_entropy_maintain_steps=None, 
+                 adaptive_robust_coef=False, robust_coef_min=1e-5, robust_coef_max=1e-3,
+                 robust_buffer_size=250):
         super().__init__()
 
         self.action_range = action_range
@@ -70,6 +73,14 @@ class SACAgent(Agent):
 
         self.robust_method = robust_method
         self.robust_coef = robust_coef
+
+        self.adaptive_robust_coef = adaptive_robust_coef
+        if self.adaptive_robust_coef:
+            self.robust_coef_min = robust_coef_min
+            self.robust_coef_max = robust_coef_max
+            self.robust_buffer_size = robust_buffer_size
+            self.performance_buffer = deque(maxlen=robust_buffer_size)
+            self.epoch_rewards = []
 
         # epsilon-greedy schedule
         self.eps_start = 0.4
@@ -350,6 +361,79 @@ class SACAgent(Agent):
 
         else:
             return torch.zeros_like(next_obs)[:,0:1] 
+        
+    def log_epoch_reward(self, reward):
+        if self.adaptive_robust_coef:
+            self.epoch_rewards.append(reward)
+
+    def finalize_epoch(self):
+        """Call at the end of each epoch to update adaptive robust_coef."""
+        if self.adaptive_robust_coef and len(self.epoch_rewards) > 0:
+            # Calculate mean reward for this epoch
+            epoch_mean_reward = np.mean(self.epoch_rewards)
+            self.performance_buffer.append(epoch_mean_reward)
+            
+            # Update robust_coef based on rolling buffer
+            self.update_adaptive_robust_coef()
+            
+            # Clear epoch rewards for next epoch
+            self.epoch_rewards = []
+            
+            return epoch_mean_reward
+        return None
+    
+    def get_robust_stats(self):
+        """Return statistics about adaptive robust coefficient."""
+        if not self.adaptive_robust_coef or len(self.performance_buffer) == 0:
+            return {
+                'robust_coef': self.robust_coef,
+                'adaptive': False
+            }
+        
+        buffer_array = np.array(self.performance_buffer)
+        recent_window = max(1, len(self.performance_buffer) // 10)
+        recent_performance = np.mean(list(self.performance_buffer)[-recent_window:])
+        
+        return {
+            'robust_coef': self.robust_coef,
+            'adaptive': True,
+            'buffer_size': len(self.performance_buffer),
+            'mean_performance': np.mean(buffer_array),
+            'std_performance': np.std(buffer_array),
+            'recent_performance': recent_performance,
+            'min_performance': np.min(buffer_array),
+            'max_performance': np.max(buffer_array)
+        }
+    
+    def update_adaptive_robust_coef(self):
+        """Update robust_coef based on rolling performance buffer."""
+        if not self.adaptive_robust_coef or len(self.performance_buffer) < 2:
+            return
+        
+        # Calculate statistics from buffer
+        buffer_array = np.array(self.performance_buffer)
+        mean_performance = np.mean(buffer_array)
+        std_performance = np.std(buffer_array)
+        
+        # Get recent performance (last 10% of buffer)
+        recent_window = max(1, len(self.performance_buffer) // 10)
+        recent_performance = np.mean(list(self.performance_buffer)[-recent_window:])
+        
+        # Calculate normalized improvement
+        if std_performance > 0:
+            normalized_improvement = (recent_performance - mean_performance) / std_performance
+        else:
+            normalized_improvement = 0
+        
+        # Map improvement to coefficient range using tanh
+        # Better performance (positive improvement) -> higher coef
+        # Worse performance (negative improvement) -> lower coef
+        scale_factor = 0.5
+        adjustment = np.tanh(normalized_improvement * scale_factor)
+        
+        # Map [-1, 1] to [min_coef, max_coef]
+        coef_range = self.robust_coef_max - self.robust_coef_min
+        self.robust_coef = self.robust_coef_min + (adjustment + 1) / 2 * coef_range
 
 
 
