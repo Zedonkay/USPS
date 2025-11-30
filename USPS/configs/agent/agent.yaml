@@ -23,6 +23,10 @@ agent:
     learnable_temperature: true
     robust_method: "no"
     robust_coef: 0.1
+    adaptive_robust_coef: true
+    robust_coef_min: 1e-5
+    robust_coef_max: 1e-3
+    robust_buffer_size: 250
     # Target entropy step function scheduling
     # Evaluates f(step) at midpoint of each maintenance period and uses that value for the entire period
     # Available variables in function: step, action_dim, math, np, exp, log, sqrt
