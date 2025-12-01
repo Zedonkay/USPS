@@ -240,10 +240,12 @@ class SACAgent(Agent):
 
         # Get scheduled target entropy for current step
         current_target_entropy = self.get_target_entropy(step)
+        coef = self.robust_coef
 
         logger.log('train_actor/loss', actor_loss, step)
         logger.log('train_actor/target_entropy', current_target_entropy, step)
         logger.log('train_actor/entropy', -log_prob.mean(), step)
+        logger.log('train_actor/robust_coef', coef, step)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
