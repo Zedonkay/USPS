@@ -34,6 +34,7 @@ overrides=cartpole_balance
 # robust_method=l1_param
 # robust_coef=1e-4
 # adaptive_robust_coef=false
+#adaptive
 
 # l2 adv with ADAPTIVE robust_coef
 robust_method=l2_adv_param
