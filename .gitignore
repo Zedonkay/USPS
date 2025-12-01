@@ -6,6 +6,7 @@
 # Hydra output directories
 **/.hydra/
 **/outputs/
+**/pre_outputs/
 **/logs/
 
 # TensorBoard event files
@@ -28,3 +29,4 @@ venv/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
