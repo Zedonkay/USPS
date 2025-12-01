@@ -58,5 +58,5 @@ for seed in 12345 23451 34512 45123 51234; do
         agent.params.robust_coef_min=${robust_coef_min} \
         agent.params.robust_coef_max=${robust_coef_max} \
         agent.params.robust_buffer_size=${robust_buffer_size} \
-        experiment=adv_adaptive &
+        experiment=adv_adaptive2 &
 done
