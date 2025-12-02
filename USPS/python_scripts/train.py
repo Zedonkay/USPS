@@ -104,8 +104,8 @@ class Workspace(object):
                         
                         # Log robust_coef statistics
                         if hasattr(self.agent, 'get_robust_stats'):
-                            print(f"logging")
                             stats = self.agent.get_robust_stats()
+                            print(f"logging robust {stats['robust_coef']}")
                             if stats['adaptive']:
                                 self.logger.log('train_robust/coef', stats['robust_coef'], self.step)
                                 self.logger.log('train_robust/mean_performance', stats['mean_performance'], self.step)
