@@ -93,9 +93,11 @@ class Workspace(object):
 
                 self.logger.log('train/episode_reward', episode_reward, self.step)
 
+                print("adapting")
                 # Finalize epoch for adaptive robust_coef
                 if hasattr(self.agent, 'finalize_epoch'):
                     epoch_mean_reward = self.agent.finalize_epoch()
+                    print("hello")
                     if epoch_mean_reward is not None:
                         self.logger.log('train/epoch_mean_reward', epoch_mean_reward, self.step)
                         
