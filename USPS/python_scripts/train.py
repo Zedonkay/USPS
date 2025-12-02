@@ -92,6 +92,7 @@ class Workspace(object):
                         self.step, save=(self.step > self.cfg.num_random_steps))
 
                 self.logger.log('train/episode_reward', episode_reward, self.step)
+                self.agent.log_epoch_reward(episode_reward)
 
                 print("adapting")
                 # Finalize epoch for adaptive robust_coef

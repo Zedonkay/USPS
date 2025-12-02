@@ -418,7 +418,8 @@ class SACAgent(Agent):
         std_performance = np.std(buffer_array)
         
         # Get recent performance (last 10% of buffer)
-        recent_window = max(1, len(self.performance_buffer) // 10)
+        print(len(self.performance_buffer))
+        recent_window = max(1, len(self.performance_buffer) // 5)
         recent_performance = np.mean(list(self.performance_buffer)[-recent_window:])
         
         # Calculate normalized improvement
