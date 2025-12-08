@@ -1,6 +1,6 @@
 
 #!/bin/bash
-# Train cube_in_hand with robust_coef sweep
+# Train cube_in_hand with adaptive robust_coef
 # Runs all experiments in background with nohup and logs to files
 # Safe to close SSH tunnel after starting
 
@@ -34,9 +34,13 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 # select exp setting and regularizer setting
 overrides=cube_in_hand
 robust_method=l2_adv_param
-# Sweep across 5 different robust_coef values
-robust_coefs=(1e-5 3e-5 5e-5 7e-5 1e-4)
-exp_base_name=adv
+# l2 adv with ADAPTIVE robust_coef
+robust_coef=5e-4  # initial value, will be adapted
+adaptive_robust_coef=true
+robust_coef_min=1e-4
+robust_coef_max=1e-3
+robust_buffer_size=250
+exp_base_name=adv_adaptive
 
 # Set device based on OS (macOS doesn't have CUDA)
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -49,48 +53,47 @@ fi
 LOG_DIR="logs/train_cube_in_hand-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "${LOG_DIR}"
 
-echo "Starting training sweep..."
+echo "Starting training with adaptive robust_coef..."
 echo "Log directory: ${LOG_DIR}"
 echo "All output will be logged to: ${LOG_DIR}/"
 echo ""
 
 cuda_id=0
 for seed in 12345; do
-    for robust_coef in "${robust_coefs[@]}"; do
-        # set up cuda (only for Linux)
-        if [[ "$OSTYPE" != "darwin"* ]]; then
-            export CUDA_VISIBLE_DEVICES=${cuda_id}
-        fi
-        
-        # Format robust_coef for experiment name (convert scientific notation to readable format)
-        # e.g., 7e-5 -> coef7e-5, 1e-4 -> coef1e-4
-        robust_coef_str=$(echo "${robust_coef}" | tr -d '.')
-        exp_name="${exp_base_name}-coef${robust_coef_str}"
-        
-        # Log file for this experiment
-        log_file="${LOG_DIR}/train_coef${robust_coef_str}_seed${seed}.log"
-        
-        echo "Starting training with robust_coef=${robust_coef}, experiment=${exp_name}"
-        echo "  Logging to: ${log_file}"
-        
-        # train in background, redirecting stdout and stderr to log file
-        # Use nohup and explicit redirection to ensure logs are captured
-        # Use -u flag for unbuffered output so logs appear immediately
-        nohup ${PYTHON_CMD} -u python_scripts/train.py \
-            overrides=${overrides} \
-            seed=${seed} \
-            device=${DEVICE_OVERRIDE#device=} \
-            agent.params.robust_method=${robust_method} \
-            agent.params.robust_coef=${robust_coef} \
-            experiment=${exp_name} \
-            > "${log_file}" 2>&1 &
-        
-        # Store PID
-        pid=$!
-        echo "  Started with PID: ${pid}"
-        echo "${pid}:${exp_name}:${robust_coef}" >> "${LOG_DIR}/pids.txt"
-        echo ""
-    done
+    # set up cuda (only for Linux)
+    if [[ "$OSTYPE" != "darwin"* ]]; then
+        export CUDA_VISIBLE_DEVICES=${cuda_id}
+    fi
+    
+    exp_name="${exp_base_name}"
+    
+    # Log file for this experiment
+    log_file="${LOG_DIR}/train_adaptive_seed${seed}.log"
+    
+    echo "Starting training with adaptive robust_coef (initial=${robust_coef}, min=${robust_coef_min}, max=${robust_coef_max}), experiment=${exp_name}"
+    echo "  Logging to: ${log_file}"
+    
+    # train in background, redirecting stdout and stderr to log file
+    # Use nohup and explicit redirection to ensure logs are captured
+    # Use -u flag for unbuffered output so logs appear immediately
+    nohup ${PYTHON_CMD} -u python_scripts/train.py \
+        overrides=${overrides} \
+        seed=${seed} \
+        device=${DEVICE_OVERRIDE#device=} \
+        agent.params.robust_method=${robust_method} \
+        agent.params.robust_coef=${robust_coef} \
+        agent.params.adaptive_robust_coef=${adaptive_robust_coef} \
+        agent.params.robust_coef_min=${robust_coef_min} \
+        agent.params.robust_coef_max=${robust_coef_max} \
+        agent.params.robust_buffer_size=${robust_buffer_size} \
+        experiment=${exp_name} \
+        > "${log_file}" 2>&1 &
+    
+    # Store PID
+    pid=$!
+    echo "  Started with PID: ${pid}"
+    echo "${pid}:${exp_name}:adaptive" >> "${LOG_DIR}/pids.txt"
+    echo ""
 done
 
 echo "All training jobs started in background!"
