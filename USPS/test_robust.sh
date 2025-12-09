@@ -7,7 +7,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # cartpole_blance/cartpole_swingup
-base_dir="outputs/cartpole_swingup-cartpole_swingup_non_reg"
+base_dir="outputs/cartpole_swingup-sensitivity_adv-5e-4"
 perturb_param_list="pole_length pole_mass joint_damping slider_damping"
 perturb_min_list="0.3 0.1 2e-6 5e-4"
 perturb_max_list="3.0 10.0 2e-1 3.0"
