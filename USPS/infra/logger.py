@@ -79,8 +79,30 @@ class MetersGroup(object):
         if self._csv_writer is None:
             self._csv_writer = csv.DictWriter(self._csv_file,
                                               fieldnames=sorted(data.keys()),
-                                              restval=0.0)
+                                              restval=0.0,
+                                              extrasaction='ignore')
             self._csv_writer.writeheader()
+        else:
+            existing_fields = set(self._csv_writer.fieldnames)
+            new_fields = set(data.keys()) - existing_fields
+            if new_fields:
+                current_pos = self._csv_file.tell()
+                self._csv_file.seek(0, os.SEEK_END)
+                lines = self._csv_file.readlines()
+                self._csv_file.seek(0)
+                self._csv_file.truncate()
+                all_fields = sorted(set(data.keys()) | existing_fields)
+                self._csv_writer = csv.DictWriter(self._csv_file,
+                                                  fieldnames=all_fields,
+                                                  restval=0.0,
+                                                  extrasaction='ignore')
+                self._csv_writer.writeheader()
+                if len(lines) > 0:
+                    reader = csv.DictReader(lines[1:],fieldsnames=existing_fields)
+                    for row in reader:
+                        for field in new_fields:
+                            row[field] = 0.0
+                        self._csv_writer.writerow(row)
         self._csv_writer.writerow(data)
         self._csv_file.flush()
 

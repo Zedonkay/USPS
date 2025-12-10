@@ -273,6 +273,9 @@ class SACAgent(Agent):
         
         logger.log('train/batch_reward', reward.mean(), step)
 
+        current_target_entropy = self.get_target_entropy(step)
+        logger.log('train/target_entropy', current_target_entropy, step)
+
         self.update_critic(obs, action, reward, next_obs, not_done_no_max, logger, step, next_obs_dir)
 
         if step % self.actor_update_frequency == 0:
@@ -283,8 +286,16 @@ class SACAgent(Agent):
                                      self.critic_tau)
 	
     def save(self, agent_dir):
-        torch.save(self.actor.state_dict(), os.path.join(agent_dir, "actor.pth"))
-        torch.save(self.critic.state_dict(), os.path.join(agent_dir, "critic.pth"))
+        try:
+            os.makedirs(agent_dir, exist_ok=True)
+            actor_path = os.path.join(agent_dir, "actor.pth")
+            critic_path = os.path.join(agent_dir, "critic.pth")
+            torch.save(self.actor.state_dict(), actor_path)
+            torch.save(self.critic.state_dict(), critic_path)
+            print(f"Actor saved to {actor_path}")
+            print(f"Critic saved to {critic_path}")
+        except Exception as e:
+            print(f"Warning: Failed to save agent: {e}")
 
     def load(self, agent_dir):
         self.actor.load_state_dict(torch.load(os.path.join(agent_dir, "actor.pth"), map_location=torch.device('cpu')))

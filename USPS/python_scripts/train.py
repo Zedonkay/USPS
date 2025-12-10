@@ -80,7 +80,7 @@ class Workspace(object):
 
     def run(self):
         episode, episode_reward, done = 0, 0, True
-        best_eval_reward = 0
+        best_eval_reward = -float('inf')
         start_time = time.time()
         while self.step < self.cfg.num_train_steps:
             if done:
