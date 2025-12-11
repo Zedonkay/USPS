@@ -40,7 +40,7 @@ adaptive_robust_coef=true
 robust_coef_min=1e-4
 robust_coef_max=1e-3
 robust_buffer_size=250
-exp_base_name=adv_adaptive
+exp_base_name=manipulation_adaptive_fixed_target_entropy
 
 # Set device based on OS (macOS doesn't have CUDA)
 if [[ "$OSTYPE" == "darwin"* ]]; then
