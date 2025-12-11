@@ -44,7 +44,7 @@ robust_coef_max=1e-3
 robust_buffer_size=250
 
 cuda_id=0
-for seed in 12345 23451 34512 45123 51234; do
+for seed in 12345 23451 34512; do
     # set up cuda
     export CUDA_VISIBLE_DEVICES=${cuda_id}
     cuda_id=$(($cuda_id+1))

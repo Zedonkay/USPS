@@ -5,6 +5,7 @@
 import os
 import sys
 import time
+import sys
 import json
 import argparse
 from typing import Optional
@@ -32,6 +33,9 @@ import hydra
 
 TEST_EPISODES = 20 # tests per model per perturb exp
 TEST_NUM = 20 # perturb exp
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 class Tester(object):
     def __init__(
