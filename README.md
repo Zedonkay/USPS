@@ -20,5 +20,7 @@ cd ../..
 # Possible issues
 - Error: ```AttributeError: module 'setuptools._distutils' has no attribute 'version'```
      - Solution: make sure you're using setuptools 59.5.0
+- Error: ```ModuleNotFoundError: No module named 'envs'```
+     - Solution: Add USPS to python path (should be implemented in ```train.py``` and ```test.py```)
 
 
