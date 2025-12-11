@@ -1,0 +1,28 @@
+# @package _group_
+env: 
+  name: "inhand_egg"
+  class: "envs.inhand_env.InHandEnv"
+  params: 
+    env_id: "HandManipulateEggRotate-v0"
+    action_rescale: true
+    obs_flatten: true
+    max_episode_steps: 100
+    random: ${seed}
+    task_kwargs: {}
+
+max_episode_steps: 100
+
+# training params 
+num_random_steps: 5e3
+num_train_steps: 1e6
+eval_frequency: 1e4
+num_eval_episodes: 10
+
+# algorithm params
+sac_critic_lr: 1e-4
+sac_actor_lr: 1e-4
+sac_alpha_lr: 1e-4
+
+# replay buffer
+replay_buffer_capacity: ${num_train_steps}
+

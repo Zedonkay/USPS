@@ -3,11 +3,27 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 import os
+import sys
 import time
 import sys
 import json
 import argparse
 from typing import Optional
+from pathlib import Path
+
+# Ensure the repository root is on sys.path so local packages like `envs` can be
+# imported even after Hydra changes the working directory at runtime.
+# `test.py` lives at <repo>/python_scripts/test.py, so go two levels up.
+repo_root = Path(__file__).resolve().parents[1]
+repo_root_str = str(repo_root)
+if repo_root_str not in sys.path:
+    sys.path.insert(0, repo_root_str)
+# Also add the USPS package directory so `envs` can be imported directly
+# (as expected by config files that use "envs.cube_in_hand_env.CubeInHandEnv")
+usps_package_dir = repo_root / "USPS"
+usps_package_str = str(usps_package_dir)
+if usps_package_str not in sys.path:
+    sys.path.insert(0, usps_package_str)
 
 import numpy as np
 import torch
@@ -101,7 +117,9 @@ class Tester(object):
                      "std_reward": std_reward,
                      "min_reward": min_reward,
                      "perturb_spec": perturb_spec}
+        
         test_name = "{}-constant-{:.3e}.json".format(perturb_spec["param"], perturb_spec["start"])
+        
         save_path = os.path.join(self.test_path, test_name)
         with open(save_path, "w") as wf:
             json.dump(save_data, wf) 

@@ -7,8 +7,8 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
 # set up cuda 
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
-overrides=quadruped_walk
-# overrides=quadruped_run
+# overrides=quadruped_walk
+overrides=quadruped_run
 
 ## non robust
 #robust_method=none
@@ -39,12 +39,12 @@ overrides=quadruped_walk
 robust_method=l2_adv_param
 robust_coef=5e-4  # initial value, will be adapted
 adaptive_robust_coef=true
-robust_coef_min=1e-5
+robust_coef_min=1e-4
 robust_coef_max=1e-3
 robust_buffer_size=250
 
 cuda_id=0
-for seed in 12345 23451 34512; do
+for seed in 12345 23451 34512 45123 51234; do
     # set up cuda
     export CUDA_VISIBLE_DEVICES=${cuda_id}
     cuda_id=$(($cuda_id+1))
@@ -58,5 +58,5 @@ for seed in 12345 23451 34512; do
         agent.params.robust_coef_min=${robust_coef_min} \
         agent.params.robust_coef_max=${robust_coef_max} \
         agent.params.robust_buffer_size=${robust_buffer_size} \
-        experiment=adv_adaptive &
+        experiment=adv_adaptive2 &
 done

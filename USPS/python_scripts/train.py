@@ -56,6 +56,7 @@ class Workspace(object):
                                           self.device)
 
         self.step = 0
+        self.episode_count = 0  # Track episodes for adaptive robust_coef
 
     def evaluate(self):
         average_episode_reward = 0
@@ -67,7 +68,7 @@ class Workspace(object):
             episode_reward = 0
             while not done:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=False)
+                    action = self.agent.act(obs, sample=False,explore=False)
                 obs, reward, done, _ = self.env.step(action)
                 episode_reward += reward
 
@@ -79,7 +80,7 @@ class Workspace(object):
 
     def run(self):
         episode, episode_reward, done = 0, 0, True
-        best_eval_reward = 0
+        best_eval_reward = -float('inf')
         start_time = time.time()
         while self.step < self.cfg.num_train_steps:
             if done:
@@ -91,6 +92,25 @@ class Workspace(object):
                         self.step, save=(self.step > self.cfg.num_random_steps))
 
                 self.logger.log('train/episode_reward', episode_reward, self.step)
+                self.agent.log_epoch_reward(episode_reward)
+
+                print("adapting")
+                # Finalize epoch for adaptive robust_coef
+                if hasattr(self.agent, 'finalize_epoch'):
+                    epoch_mean_reward = self.agent.finalize_epoch()
+                    print(f"Last epoch reward {epoch_mean_reward}")
+                    if epoch_mean_reward is not None:
+                        self.logger.log('train/epoch_mean_reward', epoch_mean_reward, self.step)
+                        
+                        # Log robust_coef statistics
+                        if hasattr(self.agent, 'get_robust_stats'):
+                            stats = self.agent.get_robust_stats()
+                            print(f"New robust coef {stats['robust_coef']}")
+                            if stats['adaptive']:
+                                self.logger.log('train_robust/coef', stats['robust_coef'], self.step)
+                                self.logger.log('train_robust/mean_performance', stats['mean_performance'], self.step)
+                                self.logger.log('train_robust/recent_performance', stats['recent_performance'], self.step)
+                                self.logger.log('train_robust/buffer_size', stats['buffer_size'], self.step)
 
                 # reset for new epoch
                 obs = self.env.reset()
@@ -105,10 +125,12 @@ class Workspace(object):
 
             # sample action for data collection
             if self.step < self.cfg.num_random_steps:
-                action = self.env.action_space.sample()
+                # Use very small random actions - zero actions might relax hand and drop block
+                # Small random actions help maintain grasp while exploring
+                action = self.env.action_space.sample() * 0.1
             else:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True)
+                    action = self.agent.act(obs, sample=True,explore=True, step=self.step)
 
             # run training update
             if self.step >= self.cfg.num_random_steps:
@@ -146,4 +168,3 @@ def main(cfg):
 
 if __name__ == '__main__':
     main()
-

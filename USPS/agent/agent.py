@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+from collections import deque
 
 from . import Agent
 from USPS.infra import utils
@@ -18,7 +19,10 @@ class SACAgent(Agent):
                  actor_cfg, discount, init_temperature, alpha_lr, alpha_betas,
                  actor_lr, actor_betas, actor_update_frequency, critic_lr,
                  critic_betas, critic_tau, critic_target_update_frequency,
-                 batch_size, learnable_temperature, robust_method="none", robust_coef=1e-3):
+                 batch_size, learnable_temperature, robust_method="none", robust_coef=1e-3,
+                 target_entropy_schedule_fn=None, target_entropy_maintain_steps=None, 
+                 adaptive_robust_coef=False, robust_coef_min=1e-5, robust_coef_max=1e-3,
+                 robust_buffer_size=250):
         super().__init__()
 
         self.action_range = action_range
@@ -39,7 +43,16 @@ class SACAgent(Agent):
 
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(self.device)
         self.log_alpha.requires_grad = True
-        # set target entropy to -|A|
+        
+        # Target entropy scheduling configuration
+        self.action_dim = action_dim
+        self.target_entropy_schedule_fn = target_entropy_schedule_fn
+        self.target_entropy_maintain_steps = target_entropy_maintain_steps
+        
+        # Cache for period-based target entropy values
+        self._target_entropy_cache = {}
+        
+        # set target entropy to -|A| (default, or will be overridden by schedule)
         self.target_entropy = -action_dim
 
         # optimizers
@@ -61,6 +74,20 @@ class SACAgent(Agent):
         self.robust_method = robust_method
         self.robust_coef = robust_coef
 
+        self.adaptive_robust_coef = adaptive_robust_coef
+        if self.adaptive_robust_coef:
+            self.robust_coef_min = robust_coef_min
+            self.robust_coef_max = robust_coef_max
+            self.robust_buffer_size = robust_buffer_size
+            self.performance_buffer = deque(maxlen=robust_buffer_size)
+            self.epoch_rewards = []
+
+        # epsilon-greedy schedule
+        self.eps_start = 0.4
+        self.eps_end = 0.05
+
+        self.eps_decay = 500_000
+
     def train(self, training=True):
         self.training = training
         self.actor.train(training)
@@ -70,14 +97,95 @@ class SACAgent(Agent):
     def alpha(self):
         return self.log_alpha.exp()
 
-    def act(self, obs, sample=False):
-        obs = torch.FloatTensor(obs).to(self.device)
-        obs = obs.unsqueeze(0)
+    def get_target_entropy(self, step):
+        """
+        Get target entropy for the current step using step function scheduling.
+        
+        If target_entropy_schedule_fn is None, returns the fixed target_entropy.
+        Otherwise, evaluates f(step) at the midpoint of each maintenance period
+        and uses that value for the entire period.
+        
+        Args:
+            step: Current training step
+            
+        Returns:
+            Target entropy value (float)
+        """
+        # If scheduling is not enabled, return fixed target entropy
+        if self.target_entropy_schedule_fn is None or self.target_entropy_maintain_steps is None:
+            return self.target_entropy
+        
+        # Calculate which period this step belongs to
+        period = step // self.target_entropy_maintain_steps
+        
+        # Check cache first
+        if period in self._target_entropy_cache:
+            return self._target_entropy_cache[period]
+        
+        # Calculate midpoint of this period
+        midpoint = period * self.target_entropy_maintain_steps + self.target_entropy_maintain_steps // 2
+        
+        # Evaluate the function at the midpoint
+        # Create a safe namespace for eval()
+        namespace = {
+            'step': midpoint,
+            'action_dim': self.action_dim,
+            'math': math,
+            'np': np,
+            'exp': math.exp,
+            'log': math.log,
+            'sqrt': math.sqrt,
+        }
+        
+        try:
+            # Evaluate the function expression
+            target_entropy_value = eval(self.target_entropy_schedule_fn, {"__builtins__": {}}, namespace)
+            # Convert to Python float if needed (handles numpy/torch types)
+            if isinstance(target_entropy_value, np.ndarray):
+                target_entropy_value = float(target_entropy_value.item() if target_entropy_value.size == 1 else target_entropy_value[0])
+            elif isinstance(target_entropy_value, torch.Tensor):
+                target_entropy_value = float(target_entropy_value.item())
+            else:
+                target_entropy_value = float(target_entropy_value)
+            # Cache the result for this period
+            self._target_entropy_cache[period] = target_entropy_value
+            return target_entropy_value
+        except Exception as e:
+            # If evaluation fails, fall back to fixed target entropy
+            print(f"Warning: Failed to evaluate target_entropy_schedule_fn: {e}")
+            return self.target_entropy
+
+    # def act(self, obs, sample=False):
+    #     obs = torch.FloatTensor(obs).to(self.device)
+    #     obs = obs.unsqueeze(0)
+    #     dist = self.actor(obs)
+    #     action = dist.sample() if sample else dist.mean
+    #     action = action.clamp(*self.action_range)
+    #     assert action.ndim == 2 and action.shape[0] == 1
+    #     return utils.to_np(action[0])
+    def act(self, obs, sample=False, explore=False, step = 0):
+        # 1) normal policy action
+        obs = torch.FloatTensor(obs).to(self.device).unsqueeze(0)
         dist = self.actor(obs)
-        action = dist.sample() if sample else dist.mean
+        action = dist.sample() if sample else dist.mean   # [1, act_dim]
+
+        # 2) epsilon-greedy exploration (continuous actions)
+        if explore:
+            # decaying epsilon
+            eps = self.eps_end + (self.eps_start - self.eps_end) * \
+                math.exp(-1.0 * step / self.eps_decay)
+
+            if np.random.rand() < eps:
+                # override with a random action in the valid range
+                low, high = self.action_range
+                rand_action = torch.empty_like(action).uniform_(low, high)
+                action = rand_action
+
+        # 3) clamp to action range and return numpy
         action = action.clamp(*self.action_range)
         assert action.ndim == 2 and action.shape[0] == 1
         return utils.to_np(action[0])
+
 
     def update_critic(self, obs, action, reward, next_obs, not_done, logger, step, next_obs_dir):
         dist = self.actor(next_obs)
@@ -130,9 +238,14 @@ class SACAgent(Agent):
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_prob - actor_Q).mean()
 
+        # Get scheduled target entropy for current step
+        current_target_entropy = self.get_target_entropy(step)
+        coef = self.robust_coef
+
         logger.log('train_actor/loss', actor_loss, step)
-        logger.log('train_actor/target_entropy', self.target_entropy, step)
+        logger.log('train_actor/target_entropy', current_target_entropy, step)
         logger.log('train_actor/entropy', -log_prob.mean(), step)
+        logger.log('train_actor/robust_coef', coef, step)
 
         # optimize the actor
         self.actor_optimizer.zero_grad()
@@ -144,7 +257,7 @@ class SACAgent(Agent):
         if self.learnable_temperature:
             self.log_alpha_optimizer.zero_grad()
             alpha_loss = (self.alpha *
-                          (-log_prob - self.target_entropy).detach()).mean()
+                          (-log_prob - current_target_entropy).detach()).mean()
             logger.log('train_alpha/loss', alpha_loss, step)
             logger.log('train_alpha/value', self.alpha, step)
             alpha_loss.backward()
@@ -160,6 +273,9 @@ class SACAgent(Agent):
         
         logger.log('train/batch_reward', reward.mean(), step)
 
+        current_target_entropy = self.get_target_entropy(step)
+        logger.log('train/target_entropy', current_target_entropy, step)
+
         self.update_critic(obs, action, reward, next_obs, not_done_no_max, logger, step, next_obs_dir)
 
         if step % self.actor_update_frequency == 0:
@@ -170,8 +286,16 @@ class SACAgent(Agent):
                                      self.critic_tau)
 	
     def save(self, agent_dir):
-        torch.save(self.actor.state_dict(), os.path.join(agent_dir, "actor.pth"))
-        torch.save(self.critic.state_dict(), os.path.join(agent_dir, "critic.pth"))
+        try:
+            os.makedirs(agent_dir, exist_ok=True)
+            actor_path = os.path.join(agent_dir, "actor.pth")
+            critic_path = os.path.join(agent_dir, "critic.pth")
+            torch.save(self.actor.state_dict(), actor_path)
+            torch.save(self.critic.state_dict(), critic_path)
+            print(f"Actor saved to {actor_path}")
+            print(f"Critic saved to {critic_path}")
+        except Exception as e:
+            print(f"Warning: Failed to save agent: {e}")
 
     def load(self, agent_dir):
         self.actor.load_state_dict(torch.load(os.path.join(agent_dir, "actor.pth"), map_location=torch.device('cpu')))
@@ -250,6 +374,80 @@ class SACAgent(Agent):
 
         else:
             return torch.zeros_like(next_obs)[:,0:1] 
+        
+    def log_epoch_reward(self, reward):
+        if self.adaptive_robust_coef:
+            self.epoch_rewards.append(reward)
+
+    def finalize_epoch(self):
+        """Call at the end of each epoch to update adaptive robust_coef."""
+        if self.adaptive_robust_coef and len(self.epoch_rewards) > 0:
+            # Calculate mean reward for this epoch
+            epoch_mean_reward = np.mean(self.epoch_rewards)
+            self.performance_buffer.append(epoch_mean_reward)
+            
+            # Update robust_coef based on rolling buffer
+            self.update_adaptive_robust_coef()
+            
+            # Clear epoch rewards for next epoch
+            self.epoch_rewards = []
+            
+            return epoch_mean_reward
+        return None
+    
+    def get_robust_stats(self):
+        """Return statistics about adaptive robust coefficient."""
+        if not self.adaptive_robust_coef or len(self.performance_buffer) == 0:
+            return {
+                'robust_coef': self.robust_coef,
+                'adaptive': False
+            }
+        
+        buffer_array = np.array(self.performance_buffer)
+        recent_window = max(1, len(self.performance_buffer) // 10)
+        recent_performance = np.mean(list(self.performance_buffer)[-recent_window:])
+        
+        return {
+            'robust_coef': self.robust_coef,
+            'adaptive': True,
+            'buffer_size': len(self.performance_buffer),
+            'mean_performance': np.mean(buffer_array),
+            'std_performance': np.std(buffer_array),
+            'recent_performance': recent_performance,
+            'min_performance': np.min(buffer_array),
+            'max_performance': np.max(buffer_array)
+        }
+    
+    def update_adaptive_robust_coef(self):
+        """Update robust_coef based on rolling performance buffer."""
+        if not self.adaptive_robust_coef or len(self.performance_buffer) < 2:
+            return
+        
+        # Calculate statistics from buffer
+        buffer_array = np.array(self.performance_buffer)
+        mean_performance = np.mean(buffer_array)
+        std_performance = np.std(buffer_array)
+        
+        # Get recent performance (last 10% of buffer)
+        print(len(self.performance_buffer))
+        recent_window = max(1, len(self.performance_buffer) // 5)
+        recent_performance = np.mean(list(self.performance_buffer)[-recent_window:])
+        
+        # Calculate normalized improvement
+        if std_performance > 0:
+            normalized_improvement = (recent_performance - mean_performance) / std_performance
+        else:
+            normalized_improvement = 0
+        
+        # Map improvement to coefficient range using tanh
+        # Better performance (positive improvement) -> higher coef
+        # Worse performance (negative improvement) -> lower coef
+        scale_factor = 0.5
+        adjustment = np.tanh(normalized_improvement * scale_factor)
+        
+        # Map [-1, 1] to [min_coef, max_coef]
+        coef_range = self.robust_coef_max - self.robust_coef_min
+        self.robust_coef = self.robust_coef_min + (adjustment + 1) / 2 * coef_range
 
 
 
