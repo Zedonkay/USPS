@@ -97,7 +97,9 @@ class Tester(object):
                      "std_reward": std_reward,
                      "min_reward": min_reward,
                      "perturb_spec": perturb_spec}
+        
         test_name = "{}-constant-{:.3e}.json".format(perturb_spec["param"], perturb_spec["start"])
+        
         save_path = os.path.join(self.test_path, test_name)
         with open(save_path, "w") as wf:
             json.dump(save_data, wf) 

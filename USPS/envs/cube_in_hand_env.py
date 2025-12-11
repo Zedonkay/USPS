@@ -60,10 +60,9 @@ class CubeInHandEnv(gym.Env):
         self.task_kwargs = task_kwargs or {}
         
         # Parse perturbation spec (always present)
-        self.perturb_spec = self.task_kwargs.get('perturb_spec', {
-            'mode': 'range',
-            'params': {}
-        })
+        raw_perturb_spec = self.task_kwargs.get('perturb_spec', {})
+        # Convert RealWorldRL format to internal format if needed
+        self.perturb_spec = self._normalize_perturb_spec(raw_perturb_spec)
         
         # Load MuJoCo model
         self.model = mujoco.MjModel.from_xml_path(model_path)
@@ -108,6 +107,52 @@ class CubeInHandEnv(gym.Env):
         
         print(f'\nObservation Space: {self.observation_space.shape}')
         print(f'Action Space: {self.action_space.shape}')
+    
+    def _normalize_perturb_spec(self, perturb_spec):
+        """Convert RealWorldRL format to internal mode/params format.
+        
+        RealWorldRL format:
+            {'enable': True, 'period': 1, 'param': 'object_mass', 'scheduler': 'constant', 'start': 0.7}
+            or for multiple: {'enable': True, 'param': 'all', 'value_list': '0.7|0.8|0.7', ...}
+        
+        Internal format:
+            {'mode': 'fixed', 'params': {'object_mass': {'start': 0.7}}}
+        """
+        # If already in internal format (has 'mode' key), return as-is
+        if 'mode' in perturb_spec:
+            return perturb_spec
+        
+        # If empty or disabled, return default
+        if not perturb_spec or not perturb_spec.get('enable', False):
+            return {'mode': 'range', 'params': {}}
+        
+        # Convert RealWorldRL format
+        param_name = perturb_spec.get('param', 'object_mass')
+        
+        if param_name == 'all':
+            # Multiple parameters case
+            value_list_str = perturb_spec.get('value_list', '')
+            if isinstance(value_list_str, str):
+                value_list = [float(v) for v in value_list_str.split('|') if v]
+            else:
+                value_list = value_list_str
+            
+            # Default parameter names for cube_in_hand (can be overridden)
+            default_params = [
+                'object_mass', 'object_inertia', 'cube_friction', 'fingertip_friction',
+                'actuator_kp', 'actuator_kv', 'contact_damping', 'gravity_scale'
+            ]
+            
+            params = {}
+            for i, val in enumerate(value_list):
+                if i < len(default_params):
+                    params[default_params[i]] = {'start': val}
+            
+            return {'mode': 'fixed', 'params': params}
+        else:
+            # Single parameter case
+            start_val = perturb_spec.get('start', 1.0)
+            return {'mode': 'fixed', 'params': {param_name: {'start': start_val}}}
     
     def _cache_mujoco_ids(self):
         """Cache MuJoCo IDs for fast lookup."""
