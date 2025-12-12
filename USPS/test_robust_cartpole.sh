@@ -7,6 +7,7 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco210/bin
 export CUDA_DEVICE_ORDER=PCI_BUS_ID
 
 # cartpole_blance/cartpole_swingup
+base_dir="outputs/cart_nonreg"
 seed=12345
 perturb_param_list="pole_length pole_mass joint_damping slider_damping"
 perturb_min_list="0.3 0.1 2e-6 5e-4"
@@ -32,7 +33,7 @@ length=${#perturb_param_list[@]}
 
 
 cuda_id=0
-for base_dir in "outputs/cart_l1reg" "outputs/cart_l2reg" "outputs/cart_nonreg"; do
+for seed in 12345; do
     export CUDA_VISIBLE_DEVICES=${cuda_id}
     cuda_id=$(($cuda_id+1))
     exp_dir=$base_dir/$seed 
