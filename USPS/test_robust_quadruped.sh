@@ -32,7 +32,7 @@ length=${#perturb_param_list[@]}
 
 
 cuda_id=0
-for seed in 12345 23451 34512 45123 51234; do
+for seed in 12345; do
     export CUDA_VISIBLE_DEVICES=${cuda_id}
     cuda_id=$(($cuda_id+1))
     exp_dir=$base_dir/$seed 
