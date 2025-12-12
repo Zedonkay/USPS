@@ -19,7 +19,7 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 # perturb_max_list="0.7 0.7 10.0 2.0"
 
 # quadruped_walk/quadruped_run
-base_dir="outputs/quadruped_run-adv"
+base_dir="outputs/quadruped_run-adv_adaptive2"
 perturb_param_list="shin_length torso_density joint_damping contact_friction"
 perturb_min_list="0.25 500.0 10.0 0.1"
 perturb_max_list="2.0 10000.0 150.0 4.5"
