@@ -654,6 +654,20 @@ If you use this codebase in your research, please cite:
 ---
 
 ## Acknowledgments
+# Citation
+
+This repository uses code from the following paper. If you use this code in your research, please cite:
+
+```bibtex
+@inproceedings{
+    zhang2023robust,
+    title={Robust Reinforcement Learning in Continuous Control Tasks with Uncertainty Set Regularization},
+    author={Yuan Zhang and Jianhong Wang and Joschka Boedecker},
+    booktitle={7th Annual Conference on Robot Learning},
+    year={2023},
+    url={https://openreview.net/forum?id=keAPCON4jHC}
+}
+```
 
 - MuJoCo physics simulator
 - RealWorldRL Suite for standardized benchmarks

@@ -136,6 +136,65 @@ def plot_mean_reward_vs_param(results: Dict[str, List[Dict]], output_dir: str):
         plt.close()
 
 
+def plot_combined_all_params(results: Dict[str, List[Dict]], output_dir: str):
+    """Plot all parameters combined in a single plot with normalized x-axis.
+    Each parameter is normalized to 0-1 range for comparison."""
+    n_params = len(results)
+    if n_params == 0:
+        print("No results to plot")
+        return
+    
+    # Create images directory
+    images_dir = os.path.join(output_dir, 'images')
+    os.makedirs(images_dir, exist_ok=True)
+    
+    # Define a color palette
+    colors = plt.cm.tab10(np.linspace(0, 1, n_params))
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    for idx, (param_name, param_results) in enumerate(sorted(results.items())):
+        values = [r['value'] for r in param_results]
+        mean_rewards = [r['mean_reward'] for r in param_results]
+        std_rewards = [r['std_reward'] for r in param_results]
+        
+        # Normalize values to 0-1 range for comparison
+        if len(values) > 1:
+            min_val, max_val = min(values), max(values)
+            normalized_values = [(v - min_val) / (max_val - min_val) if max_val != min_val else 0.5 
+                               for v in values]
+        else:
+            normalized_values = [0.5]
+        
+        # Get color for this parameter
+        color = colors[idx]
+        
+        # Plot mean line
+        ax.plot(normalized_values, mean_rewards, marker='o', linewidth=2.5, 
+               markersize=6, label=param_name.replace('_', ' ').title(), 
+               color=color, alpha=0.8)
+        
+        # Shade the region between mean ± std
+        upper_bound = [m + s for m, s in zip(mean_rewards, std_rewards)]
+        lower_bound = [m - s for m, s in zip(mean_rewards, std_rewards)]
+        ax.fill_between(normalized_values, lower_bound, upper_bound, 
+                       alpha=0.2, color=color)
+    
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+    ax.set_xlabel('Normalized Parameter Value (0 = min, 1 = max)', fontsize=12)
+    ax.set_ylabel('Mean Reward', fontsize=12)
+    ax.set_title('All Parameters - Mean Reward Comparison', 
+                 fontsize=14, fontweight='bold', pad=15)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.legend(loc='best', fontsize=10, ncol=2, framealpha=0.9)
+    
+    plt.tight_layout()
+    output_path = os.path.join(images_dir, 'all_params_combined.png')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Saved: {output_path}")
+    plt.close()
+
+
 def plot_reward_distributions(results: Dict[str, List[Dict]], output_dir: str):
     """Plot box plots showing reward distributions for each parameter."""
     n_params = len(results)
@@ -376,7 +435,7 @@ def main():
         '--plots',
         type=str,
         nargs='+',
-        choices=['all', 'mean', 'distribution', 'min', 'summary', 'heatmap'],
+        choices=['all', 'mean', 'distribution', 'min', 'summary', 'heatmap', 'combined'],
         default=['all'],
         help='Which plots to generate (default: all)'
     )
@@ -403,7 +462,7 @@ def main():
     # Generate plots
     plots_to_generate = args.plots
     if 'all' in plots_to_generate:
-        plots_to_generate = ['mean', 'distribution', 'min', 'summary', 'heatmap']
+        plots_to_generate = ['mean', 'distribution', 'min', 'summary', 'heatmap', 'combined']
     
     print("\nGenerating visualizations...")
     
@@ -421,6 +480,9 @@ def main():
     
     if 'heatmap' in plots_to_generate:
         plot_heatmap(results, args.output_dir)
+    
+    if 'combined' in plots_to_generate:
+        plot_combined_all_params(results, args.output_dir)
     
     print(f"\nAll visualizations saved to: {args.output_dir}")
 
