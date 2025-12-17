@@ -632,27 +632,6 @@ export MUJOCO_GL=egl
 
 ---
 
-## Citation
-
-If you use this codebase in your research, please cite:
-
-```bibtex
-@software{usps2024,
-  title={USPS: Uncertainty-Sensitive Policy Search for Robust Reinforcement Learning},
-  author={...},
-  year={2024},
-  url={https://github.com/...}
-}
-```
-
----
-
-## License
-
-[Specify license here]
-
----
-
 ## Acknowledgments
 # Citation
 
